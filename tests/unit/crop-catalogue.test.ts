@@ -27,17 +27,23 @@ describe("catalogue integrity", () => {
     }
   });
 
-  it("never invents data for incomplete crops", () => {
-    const incomplete = SEED_CROPS.filter((c) => c.dataStatus === "incomplete");
-    expect(incomplete.length).toBeGreaterThan(0);
-    for (const c of incomplete) {
+  it("never invents data for incomplete crops, and estimates stay estimates", () => {
+    for (const c of SEED_CROPS.filter((x) => x.dataStatus === "incomplete")) {
       expect(c.windows).toEqual([]);
+      expect(c.templates).toEqual([]);
+      expect(c.growthDaysMin).toBeNull();
+      expect(isPlannable(c)).toBe(false);
+    }
+    // Crops filled only by imported estimates: nothing beyond the estimate is invented.
+    const estimated = SEED_CROPS.filter((c) => c.dataStatus === "estimated");
+    expect(estimated.length).toBeGreaterThan(0);
+    for (const c of estimated) {
+      expect(c.windows.every((w) => w.confidence === "estimated")).toBe(true);
       expect(c.templates).toEqual([]);
       expect(c.growthDaysMin).toBeNull();
       expect(c.sun).toBeNull();
       expect(c.water).toBeNull();
       expect(c.difficulty).toBeNull();
-      expect(isPlannable(c)).toBe(false);
     }
   });
 
@@ -274,9 +280,11 @@ describe("general Palestinian dates (wafa.ps) and country scope", () => {
     expect(wheat.status).toBe("now");
     expect(wheat.general).toBe(true);
     expect(wheat.warnings.join(" ")).toContain("موعد عام في فلسطين");
-    const now = r.groups.now;
-    const firstGeneral = now.findIndex((x) => x.general);
-    expect(firstGeneral === -1 || now.slice(firstGeneral).every((x) => x.general)).toBe(true);
+    // Documented zone dates, then documented general dates, then estimates.
+    const rank = (x: (typeof r.items)[number]) => (x.estimated ? 2 : x.general ? 1 : 0);
+    const ranks = r.groups.now.map(rank);
+    expect(ranks).toEqual([...ranks].sort((a, b) => a - b));
+    expect(ranks).toContain(2);
     const jo = recommendCrops({ crops: SEED_CROPS, today: "2026-11-10", zone: "highland", spaceType: "home_garden", country: "JO" });
     expect(jo.items.find((x) => x.crop.slug === "wheat")!.status).toBe("no_data");
   });

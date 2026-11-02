@@ -128,6 +128,8 @@ export async function saveCropRulesAction(cropId: string, raw: unknown): Promise
         note: w.note || null,
         source_id: w.sourceId || null,
         source_detail: w.sourceDetail || null,
+        confidence: w.confidence,
+        optional: w.optional,
         sort_order: i,
       })),
     );

@@ -1,5 +1,5 @@
 import { addMonths, diffDays, parseISODate, toISODate } from "@/lib/dates";
-import { FIELD_METHODS, type ClimateZone, type Crop, type ISODate, type PlantingMethod, type PlantingWindow, type Season } from "./types";
+import { FIELD_METHODS, type ClimateZone, type Crop, type CropPhaseWindow, type ISODate, type PhaseKind, type PlantingMethod, type PlantingWindow, type Season, type ZoneEstimate } from "./types";
 import { monthName } from "@/lib/format";
 import { METHOD_LABELS, SEASON_MONTHS } from "./labels";
 
@@ -30,20 +30,72 @@ export function isFieldWindow(w: Pick<PlantingWindow, "method">): boolean {
   return (FIELD_METHODS as readonly PlantingMethod[]).includes(w.method);
 }
 
+/** An imported estimate (not documented, not reviewed). */
+export function isEstimated(w: Pick<PlantingWindow, "confidence">): boolean {
+  return w.confidence === "estimated";
+}
+
 function scopedWindows(windows: PlantingWindow[], zone: ClimateZone, country?: string | null): PlantingWindow[] {
-  const applicable = windows.filter((w) => windowAppliesToCountry(w, country));
-  const specific = applicable.filter((w) => w.zone === zone);
-  return specific.length ? specific : applicable.filter((w) => w.zone === null);
+  const applicable = windows.filter((w) => windowAppliesToCountry(w, country) && !w.optional);
+  // Documented dates first (the zone's own, else general country-wide ones).
+  const documented = applicable.filter((w) => !isEstimated(w));
+  const specific = documented.filter((w) => w.zone === zone);
+  if (specific.length) return specific;
+  const general = documented.filter((w) => w.zone === null);
+  if (general.length) return general;
+  // Estimates only where nothing documented applies, and only for their own
+  // zone: an estimate is replaced as soon as better data exist.
+  return applicable.filter((w) => isEstimated(w) && w.zone === zone);
 }
 
 /**
  * Windows for PLANTING IN THE GROUND that apply to a zone (and country): the
- * zone's own windows when there are any, otherwise the general country-wide
- * windows (zone null). Nursery sowing windows are never included: they are
- * not the planting date (see `nurseryWindowsForZone`).
+ * zone's own documented windows when there are any, otherwise the general
+ * country-wide windows (zone null), otherwise the zone's estimated windows.
+ * Nursery sowing windows are never included (see `nurseryWindowsForZone`),
+ * nor optional additional seasons (see `optionalWindowsForZone`).
  */
 export function windowsForZone(crop: Pick<Crop, "windows">, zone: ClimateZone, country?: string | null): PlantingWindow[] {
   return scopedWindows(crop.windows.filter(isFieldWindow), zone, country);
+}
+
+/** Optional low-confidence additional seasons (عروات إضافية) for a zone: shown, never recommended. */
+export function optionalWindowsForZone(crop: Pick<Crop, "windows">, zone: ClimateZone, country?: string | null): PlantingWindow[] {
+  return crop.windows.filter((w) => w.optional && isFieldWindow(w) && w.zone === zone && windowAppliesToCountry(w, country));
+}
+
+/** True when every window is an estimate. */
+export function isEstimatedOnly(windows: PlantingWindow[]): boolean {
+  return windows.length > 0 && windows.every(isEstimated);
+}
+
+/** The crop's estimate for a zone (suitability, days/years), for its own country only. */
+export function zoneEstimateFor(
+  crop: Pick<Crop, "zoneEstimates">,
+  zone: ClimateZone,
+  country?: string | null,
+): ZoneEstimate | null {
+  return crop.zoneEstimates?.find((z) => z.zone === zone && country != null && z.countryCode === country) ?? null;
+}
+
+/** «لا يُوصى / غير ملائم غالبًا» for open-field planting in this zone (estimate). */
+export function isNotRecommended(crop: Pick<Crop, "zoneEstimates" | "windows">, zone: ClimateZone, country?: string | null): boolean {
+  // Documented windows for the zone outrank the estimate's restriction.
+  if (windowsForZone(crop, zone, country).some((w) => !isEstimated(w))) return false;
+  return zoneEstimateFor(crop, zone, country)?.suitability === "not_recommended";
+}
+
+/** Flowering or harvest seasons for a zone (estimates; never planting dates). */
+export function phasesForZone(
+  crop: Pick<Crop, "phases">,
+  kind: PhaseKind,
+  zone: ClimateZone,
+  country?: string | null,
+  opts: { optional?: boolean } = {},
+): CropPhaseWindow[] {
+  return (crop.phases ?? []).filter(
+    (p) => p.kind === kind && p.zone === zone && country != null && p.countryCode === country && Boolean(p.optional) === Boolean(opts.optional),
+  );
 }
 
 /** Secondary: windows for raising your own seedlings in a nursery. */
@@ -165,7 +217,7 @@ export function cropMatchesSeason(crop: Pick<Crop, "windows">, season: Season, z
   // Catalogue filter (describes the data, not a recommendation for a location):
   // a zone filter matches the zone's own windows and general country-wide ones.
   return crop.windows
-    .filter(isFieldWindow)
+    .filter((w) => isFieldWindow(w) && !w.optional)
     .filter((w) => !zone || w.zone === zone || w.zone === null)
     .some((w) => months.some((m) => monthInWindow(m, w.startMonth, w.endMonth)));
 }
@@ -187,6 +239,10 @@ export interface SimpleStatus {
   methods: PlantingMethod[];
   /** The answer rests on general country-wide dates, not dates for this zone. */
   general: boolean;
+  /** The answer rests on imported ESTIMATES (not documented). */
+  estimated: boolean;
+  /** no_data because open-field planting is not recommended in the zone (estimate). */
+  notRecommended: boolean;
 }
 
 /**
@@ -199,19 +255,22 @@ export interface SimpleStatus {
  * "soon" = the next window opens within 45 days of `today`).
  */
 export function simplePlantingStatus(
-  crop: Pick<Crop, "windows" | "propagation" | "primaryMethod"> & { category?: Crop["category"] },
+  crop: Pick<Crop, "windows" | "propagation" | "primaryMethod"> & { category?: Crop["category"]; zoneEstimates?: Crop["zoneEstimates"] },
   zone: ClimateZone,
   today: ISODate,
   country?: string | null,
 ): SimpleStatus {
   // Planting in the ground with the crop's most common method (never nursery dates).
   const windows = mainWindowsForZone(crop, zone, country);
-  if (windows.length === 0) return { kind: "no_data", month: null, methods: [], general: false };
+  if (windows.length === 0) {
+    return { kind: "no_data", month: null, methods: [], general: false, estimated: false, notRecommended: isNotRecommended(crop, zone, country) };
+  }
   const general = isGeneralOnly(windows);
+  const estimated = isEstimatedOnly(windows);
   const { year, month } = parseISODate(today);
   const open = windows.filter((w) => monthInWindow(month, w.startMonth, w.endMonth));
   if (open.length) {
-    return { kind: "now", month: open[0].endMonth, methods: [...new Set(open.map((w) => w.method))], general };
+    return { kind: "now", month: open[0].endMonth, methods: [...new Set(open.map((w) => w.method))], general, estimated, notRecommended: false };
   }
   const ahead = (w: PlantingWindow) => (w.startMonth - month + 12) % 12 || 12;
   const nextAhead = Math.min(...windows.map(ahead));
@@ -222,6 +281,8 @@ export function simplePlantingStatus(
     month: next[0].startMonth,
     methods: [...new Set(next.map((w) => w.method))],
     general,
+    estimated,
+    notRecommended: false,
   };
 }
 
@@ -235,10 +296,11 @@ export const SIMPLE_STATUS_TITLES: Record<SimpleStatusKind, string> = {
 /** Short Arabic sentence for a simple status, e.g. «يبدأ موسمه في آذار». */
 export function describeSimpleStatus(status: SimpleStatus): { title: string; detail: string } {
   const how = status.methods.map((m) => METHOD_LABELS[m]).join(" أو ");
-  // General country-wide dates are never presented as a firm answer for the zone.
-  const caveat = status.general ? " — موعد عام غير خاص بمنطقتك" : "";
+  // General country-wide dates and estimates are never presented as a firm answer.
+  const caveat = status.estimated ? " — موعد تقديري" : status.general ? " — موعد عام غير خاص بمنطقتك" : "";
   switch (status.kind) {
     case "now":
+      if (status.estimated) return { title: "ضمن الموعد التقديري للزراعة", detail: `${how} حتى ${monthName(status.month!)}${caveat}` };
       return status.general
         ? { title: "ضمن الموعد العام للزراعة", detail: `${how} حتى ${monthName(status.month!)}${caveat}` }
         : { title: SIMPLE_STATUS_TITLES.now, detail: `${how} حتى ${monthName(status.month!)}` };
@@ -247,6 +309,8 @@ export function describeSimpleStatus(status: SimpleStatus): { title: string; det
     case "later":
       return { title: SIMPLE_STATUS_TITLES.later, detail: `يبدأ موسمه في ${monthName(status.month!)} (${how})${caveat}` };
     default:
-      return { title: SIMPLE_STATUS_TITLES.no_data, detail: "لم نوثّق موعد زراعته في منطقتك بعد" };
+      return status.notRecommended
+        ? { title: "غير ملائم غالبًا لمنطقتك", detail: "تقدير: لا يُوصى بزراعته المكشوفة في هذه المنطقة" }
+        : { title: SIMPLE_STATUS_TITLES.no_data, detail: "لم نوثّق موعد زراعته في منطقتك بعد" };
   }
 }

@@ -29,7 +29,49 @@ begin
     raise exception 'nursery sowing accepted as primary method';
   exception when check_violation then null;
   end;
-  if (select data_status from public.crops where slug = 'eggplant') <> 'incomplete' then raise exception 'eggplant should stay incomplete'; end if;
+  -- Imported estimates: status "estimated", never documented/reviewed, scoped to Palestine and a zone.
+  if (select data_status from public.crops where slug = 'eggplant') <> 'estimated' then raise exception 'eggplant should be estimated'; end if;
+  if (select count(*) from public.crops where data_status = 'estimated') <> 88 then raise exception 'expected 88 estimated crops'; end if;
+  if (select count(*) from public.crop_planting_windows w join public.crops c on c.id = w.crop_id where c.slug = 'eggplant' and w.confidence = 'estimated' and not w.optional) <> 5 then
+    raise exception 'eggplant estimated windows missing or duplicated';
+  end if;
+  if (select count(*) from public.crop_planting_windows w join public.crops c on c.id = w.crop_id where c.slug = 'eggplant' and w.optional) <> 1 then
+    raise exception 'eggplant optional season missing or duplicated';
+  end if;
+  if exists (select 1 from public.crop_planting_windows where confidence = 'estimated' and (country_code is distinct from 'PS' or zone is null)) then
+    raise exception 'estimates must be scoped to Palestine and a zone';
+  end if;
+  if exists (select 1 from public.crop_planting_windows w join public.crops c on c.id = w.crop_id where c.slug in ('tomato', 'okra', 'wheat') and w.confidence <> 'documented') then
+    raise exception 'documented windows must stay documented';
+  end if;
+  if (select suitability from public.crop_zone_estimates z join public.crops c on c.id = z.crop_id where c.slug = 'apple' and z.zone = 'coastal') <> 'not_recommended' then
+    raise exception 'apple coastal restriction missing';
+  end if;
+  if exists (select 1 from public.crop_planting_windows w join public.crops c on c.id = w.crop_id where c.slug = 'apple' and w.zone = 'coastal') then
+    raise exception 'a not-recommended zone must not get a planting window';
+  end if;
+  if (select count(*) from public.crop_zone_estimates) <> 440 then raise exception 'expected 440 zone estimates'; end if;
+  if not exists (select 1 from public.crop_phase_windows p join public.crops c on c.id = p.crop_id where c.slug = 'fig' and p.kind = 'harvest' and p.zone = 'highland') then
+    raise exception 'fig harvest season missing';
+  end if;
+  -- An estimate must name its country and zone; an optional season is always an estimate.
+  begin
+    insert into public.crop_planting_windows (crop_id, zone, country_code, start_month, end_month, method, confidence)
+      values ((select id from public.crops where slug = 'fig'), 'highland', null, 1, 2, 'saplings', 'estimated');
+    raise exception 'estimate without country accepted';
+  exception when check_violation then null;
+  end;
+  begin
+    insert into public.crop_planting_windows (crop_id, zone, country_code, start_month, end_month, method, optional)
+      values ((select id from public.crops where slug = 'fig'), 'highland', 'PS', 1, 2, 'saplings', true);
+    raise exception 'documented optional season accepted';
+  exception when check_violation then null;
+  end;
+  begin
+    update public.crops set data_status = 'documented' where slug = 'fig';
+    raise exception 'unknown data status accepted';
+  exception when check_violation then null;
+  end;
   if exists (select 1 from public.crop_planting_windows w join public.crops c on c.id = w.crop_id where c.data_status = 'incomplete') then
     raise exception 'incomplete crops must not have windows';
   end if;
@@ -116,6 +158,18 @@ insert into public.gardens (name, space_type, zone) values ('بيتي المحم
 do $$ begin
   update public.crops set name = 'تخريب' where slug = 'tomato';
   if (select name from public.crops where slug = 'tomato') <> 'البندورة' then raise exception 'non-admin edited crop'; end if;
+  if (select count(*) from public.crop_phase_windows) = 0 then raise exception 'published phases not readable'; end if;
+  if (select count(*) from public.crop_zone_estimates) = 0 then raise exception 'published zone estimates not readable'; end if;
+  update public.crop_zone_estimates set suitability = 'possible';
+  if exists (select 1 from public.crop_zone_estimates where suitability = 'possible' and zone = 'coastal' and crop_id = (select id from public.crops where slug = 'apple')) then
+    raise exception 'non-admin edited zone estimates';
+  end if;
+  begin
+    insert into public.crop_phase_windows (crop_id, kind, zone, country_code, start_month, end_month)
+      values ((select id from public.crops where slug = 'fig'), 'harvest', 'highland', 'PS', 1, 2);
+    raise exception 'non-admin inserted a phase window';
+  exception when insufficient_privilege then null;
+  end;
   begin
     perform public.admin_stats();
     raise exception 'stats should be forbidden';
@@ -255,6 +309,27 @@ begin
     raise exception 'okra windows not inserted exactly once';
   end if;
   if (select count(*) from public.crops) <> (select count(distinct slug) from public.crops) then raise exception 'duplicate crops'; end if;
+end $$;
+
+-- Estimates: re-running the seed replaces them exactly once; an admin-edited
+-- estimated crop keeps the admin's data.
+do $$
+begin
+  if (select count(*) from public.crop_planting_windows w join public.crops c on c.id = w.crop_id where c.slug = 'eggplant') <> 6 then
+    raise exception 'eggplant windows duplicated by re-running the seed';
+  end if;
+  if (select count(*) from public.crop_zone_estimates z join public.crops c on c.id = z.crop_id where c.slug = 'eggplant') <> 5 then
+    raise exception 'eggplant zone estimates duplicated';
+  end if;
+end $$;
+update public.crops set updated_by = (select id from auth.users limit 1) where slug = 'fig';
+delete from public.crop_planting_windows where crop_id = (select id from public.crops where slug = 'fig');
+\ir ../../supabase/seed.sql
+do $$
+begin
+  if exists (select 1 from public.crop_planting_windows w join public.crops c on c.id = w.crop_id where c.slug = 'fig') then
+    raise exception 'seed re-added estimates to an admin-edited crop';
+  end if;
 end $$;
 
 select 'ALL RLS TESTS PASSED' as result;

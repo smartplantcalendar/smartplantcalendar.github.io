@@ -18,6 +18,7 @@ jobs:
       - run: npm run lint
       - run: npm run typecheck
       - run: npm test
+      - run: npm run estimates:check
       - name: Static export build (GitHub Pages paths)
         run: npm run build:pages
       - name: Check the export is served from the domain root

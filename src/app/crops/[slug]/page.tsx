@@ -10,6 +10,7 @@ import { otherMeanings } from "@/domain/ambiguous-names";
 import { isPlannable } from "@/domain/crop-search";
 import { fieldMethods, isFieldWindow, plantingTitle, primaryMethod, propagationMethods } from "@/domain/planting-windows";
 import { PlantingWindowsTable } from "@/components/crops/planting-windows-table";
+import { CropPhasesTable, OptionalSeasonsTable } from "@/components/crops/crop-phases-table";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Alert } from "@/components/ui/feedback";
@@ -17,6 +18,7 @@ import {
   CATEGORY_LABELS,
   DATA_STATUS_LABELS,
   DIFFICULTY_LABELS,
+  ESTIMATE_NOTICE,
   GUIDE_SECTION_LABELS,
   LIFE_CYCLE_LABELS,
   METHOD_LABELS,
@@ -27,6 +29,15 @@ import {
 import { formatNumber } from "@/lib/format";
 import { getCropBySlug, getCrops } from "@/services/crops";
 
+
+/** Arabic name for a general context link (the UI never shows raw English URLs). */
+function contextLinkLabel(url: string): string {
+  const host = new URL(url).hostname;
+  if (host.endsWith("wafa.ps")) return "مركز المعلومات الوطني الفلسطيني (وفا)";
+  if (host.endsWith("rhs.org.uk")) return "الجمعية الملكية للبستنة في بريطانيا (إرشادات غرس عامة)";
+  if (host.endsWith("agrieng.ps")) return "موقع هندسة زراعية فلسطيني";
+  return "مرجع عام";
+}
 
 // Static export: only crops known at build time get pages (rebuild to add new ones).
 export const dynamicParams = false;
@@ -69,7 +80,10 @@ export default async function CropDetailPage({ params }: { params: Promise<{ slu
   // Secondary propagation (cuttings next to a ready plant, nursery sowing) is
   // producing the plant yourself: never shown as the planting date.
   const secondary = propagationMethods(crop);
-  const fieldWindows = crop.windows.filter((w) => isFieldWindow(w) && !secondary.includes(w.method));
+  const fieldWindows = crop.windows.filter((w) => isFieldWindow(w) && !secondary.includes(w.method) && !w.optional);
+  const hasEstimates = crop.windows.some((w) => w.confidence === "estimated") || Boolean(crop.zoneEstimates?.length);
+  const hasPhases = Boolean(crop.zoneEstimates?.length);
+  const byZone = "تقديري، يختلف حسب المنطقة (انظر جدول الإزهار والقطف)";
   const nurseryWindows = crop.windows.filter((w) => !isFieldWindow(w));
   const cuttingWindows = crop.windows.filter((w) => w.method === "cuttings" && secondary.includes("cuttings"));
   const secondaryCuttings = secondary.includes("cuttings");
@@ -87,13 +101,21 @@ export default async function CropDetailPage({ params }: { params: Promise<{ slu
     { icon: Sprout, label: "طرق الزراعة في الأرض", value: methods.length ? methods.map((m) => METHOD_LABELS[m]).join("، ") : notDocumented, testId: "fact-methods" },
     { icon: Sun, label: "الشمس", value: crop.sun ? SUN_LABELS[crop.sun] : notDocumented },
     { icon: Droplets, label: "الري", value: crop.wateringSummary || (crop.water ? `احتياج ${WATER_LABELS[crop.water]}` : notDocumented) },
-    { icon: Flower2, label: "موعد الإزهار", value: crop.floweringNote ?? notDocumented, testId: "fact-flowering" },
+    { icon: Flower2, label: "موعد الإزهار", value: crop.floweringNote ?? (hasPhases ? byZone : notDocumented), testId: "fact-flowering" },
     ...(perennial
       ? [
-          { icon: Clock3, label: "المدة حتى أول إنتاج", value: crop.firstYieldNote ?? notDocumented, testId: "fact-first-yield" },
-          { icon: Wheat, label: "موسم الحصاد أو القطاف", value: crop.harvestNote ?? notDocumented, testId: "fact-harvest" },
+          { icon: Clock3, label: "المدة حتى أول إنتاج", value: crop.firstYieldNote ?? (hasPhases ? byZone : notDocumented), testId: "fact-first-yield" },
+          { icon: Wheat, label: "موسم الحصاد أو القطاف", value: crop.harvestNote ?? (hasPhases ? byZone : notDocumented), testId: "fact-harvest" },
         ]
-      : [{ icon: Wheat, label: "الحصاد أو القطاف", value: harvestValue, note: crop.growthDaysMin != null ? crop.growthNote : undefined, testId: "fact-harvest" }]),
+      : [
+          {
+            icon: Wheat,
+            label: "الحصاد أو القطاف",
+            value: crop.growthDaysMin == null && !crop.harvestNote && hasPhases ? byZone : harvestValue,
+            note: crop.growthDaysMin != null ? crop.growthNote : undefined,
+            testId: "fact-harvest",
+          },
+        ]),
     { icon: Home, label: "المساحات المناسبة", value: crop.spaceTypes.length ? crop.spaceTypes.map((s) => SPACE_TYPE_LABELS[s]).join("، ") : notDocumented },
   ];
 
@@ -189,6 +211,13 @@ export default async function CropDetailPage({ params }: { params: Promise<{ slu
             <p className="mb-4 text-sm leading-7 text-muted-foreground">
               هذه مواعيد الزراعة في المكان النهائي (الأرض أو الحديقة أو الأصيص) باستخدام بذور أو أشتال أو غراس جاهزة. تقديرات أولية عامة، والأشهر بأسمائها الشامية.
             </p>
+            {hasEstimates ? (
+              <div className="mb-4" data-testid="estimate-notice">
+                <Alert tone="warning" title="مواعيد تقديرية">
+                  {ESTIMATE_NOTICE} ليست مواعيد موثّقة علميًا ولم يراجعها مختص، وتخص مناطق فلسطين المناخية فقط. لا تعدّها توصية قطعية، وتأكد من الإرشاد الزراعي في منطقتك.
+                </Alert>
+              </div>
+            ) : null}
             {fieldWindows.length === 0 ? (
               <Alert tone="info" title="لا توجد معلومات موثوقة كافية">
                 لم نوثّق بعد {title} في أي منطقة من مناطق فلسطين، ولن نعرض موعدًا تقديريًا دون مصدر. اسأل الإرشاد الزراعي في منطقتك.
@@ -203,7 +232,11 @@ export default async function CropDetailPage({ params }: { params: Promise<{ slu
                         {METHOD_LABELS[m]}
                         {m === primary ? <span className="ms-2 text-sm font-semibold text-brand-700">(الطريقة الأكثر شيوعًا)</span> : null}
                       </h3>
-                      <PlantingWindowsTable windows={fieldWindows.filter((w) => w.method === m)} caption={`${plantingTitle(crop, m)} حسب المنطقة المناخية`} />
+                      <PlantingWindowsTable
+                        windows={fieldWindows.filter((w) => w.method === m)}
+                        caption={`${plantingTitle(crop, m)} حسب المنطقة المناخية`}
+                        zoneEstimates={m === primary ? crop.zoneEstimates : undefined}
+                      />
                     </div>
                   ))}
                 {methods.filter((m) => !fieldWindows.some((w) => w.method === m)).length ? (
@@ -215,6 +248,13 @@ export default async function CropDetailPage({ params }: { params: Promise<{ slu
                       .join("، ")}
                     .
                   </p>
+                ) : null}
+                {crop.windows.some((w) => w.optional) ? (
+                  <div className="flex flex-col gap-2">
+                    <h3 className="font-bold">عروات إضافية اختيارية (تقدير منخفض الثقة)</h3>
+                    <p className="text-sm text-muted-foreground">لا ندخلها في «ماذا أزرع الآن؟» ولا في تقييم الخطط. جرّبها فقط مع خبرة محلية.</p>
+                    <OptionalSeasonsTable crop={crop} />
+                  </div>
                 ) : null}
               </div>
             )}
@@ -264,6 +304,19 @@ export default async function CropDetailPage({ params }: { params: Promise<{ slu
             ) : null}
           </section>
 
+          {hasPhases ? (
+            <section id="phases" aria-labelledby="phases-title" className="scroll-mt-24">
+              <h2 id="phases-title" className="mb-2 flex items-center gap-2 text-2xl font-extrabold">
+                <Flower2 className="size-6 text-brand-600" aria-hidden /> الإزهار والقطف حسب المنطقة (تقديري)
+              </h2>
+              <p className="mb-4 text-sm leading-7 text-muted-foreground">
+                مواعيد منفصلة عن موعد الزراعة: الإزهار، وموسم القطف السنوي، وعدد الأيام من الزراعة في الأرض حتى أول قطف، وعدد السنوات حتى أول إنتاج للأشجار. «لا ينطبق» تعني أن المعلومة لا تخص هذا النبات، و«غير معروف» تعني أنها غير متوفرة.
+                {crop.estimate?.harvestMeaning ? ` المقصود بالقطف هنا: ${crop.estimate.harvestMeaning}.` : ""}
+              </p>
+              <CropPhasesTable crop={crop} />
+            </section>
+          ) : null}
+
           {crop.guide.map((g) => (
             <section key={g.section} id={`guide-${g.section}`} aria-labelledby={`h-${g.section}`} className="scroll-mt-24">
               <h2 id={`h-${g.section}`} className="mb-3 text-2xl font-extrabold">{g.title || GUIDE_SECTION_LABELS[g.section]}</h2>
@@ -304,6 +357,23 @@ export default async function CropDetailPage({ params }: { params: Promise<{ slu
             </section>
           ) : null}
 
+          {crop.estimate?.contextUrls.length ? (
+            <section aria-labelledby="context-title" data-testid="context-links">
+              <h2 id="context-title" className="mb-2 text-lg font-extrabold">مراجع سياقية عامة</h2>
+              <p className="mb-3 text-sm text-muted-foreground">مراجع عامة عن الزراعة في المنطقة، وليست إثباتًا لكل موعد تقديري في هذه الصفحة.</p>
+              <ul className="space-y-2 text-sm">
+                {crop.estimate.contextUrls.map((url) => (
+                  <li key={url}>
+                    <a href={url} target="_blank" rel="noopener noreferrer" className="inline-flex items-start gap-1.5 font-semibold text-brand-700 underline-offset-4 hover:underline">
+                      <ExternalLink className="mt-1 size-4 shrink-0" aria-hidden />
+                      {contextLinkLabel(url)}
+                    </a>
+                  </li>
+                ))}
+              </ul>
+            </section>
+          ) : null}
+
           {references.length ? (
             <section aria-labelledby="refs-title">
               <h2 id="refs-title" className="mb-2 text-lg font-extrabold">مراجع مرشّحة للمراجعة</h2>
@@ -330,6 +400,11 @@ export default async function CropDetailPage({ params }: { params: Promise<{ slu
               <li>
                 <a href="#windows" className="block rounded-md px-2 py-1.5 text-muted-foreground hover:bg-surface-muted hover:text-foreground">{title}</a>
               </li>
+              {hasPhases ? (
+                <li>
+                  <a href="#phases" className="block rounded-md px-2 py-1.5 text-muted-foreground hover:bg-surface-muted hover:text-foreground">الإزهار والقطف</a>
+                </li>
+              ) : null}
               {crop.guide.map((g) => (
                 <li key={g.section}>
                   <a href={`#guide-${g.section}`} className="block rounded-md px-2 py-1.5 text-muted-foreground hover:bg-surface-muted hover:text-foreground">

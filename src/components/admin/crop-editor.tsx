@@ -98,7 +98,16 @@ export function CropEditor({ crop, cropId, published }: { crop: Crop | null; cro
   const rules = useForm<RulesForm, unknown, z.output<typeof adminCropRulesSchema>>({
     resolver: zodResolver(adminCropRulesSchema),
     defaultValues: {
-      windows: crop?.windows.map((w) => ({ ...w, note: w.note ?? "", countryCode: w.countryCode ?? "", sourceId: w.sourceId ?? "", sourceDetail: w.sourceDetail ?? "" })) ?? [],
+      windows:
+        crop?.windows.map((w) => ({
+          ...w,
+          note: w.note ?? "",
+          countryCode: w.countryCode ?? "",
+          sourceId: w.sourceId ?? "",
+          sourceDetail: w.sourceDetail ?? "",
+          confidence: w.confidence ?? ("documented" as const),
+          optional: w.optional ?? false,
+        })) ?? [],
       templates:
         crop?.templates.map((t) => ({
           key: t.key,
@@ -331,7 +340,7 @@ export function CropEditor({ crop, cropId, published }: { crop: Crop | null; cro
             </CardHeader>
             <CardContent className="flex flex-col gap-3">
               {windows.fields.map((f, i) => (
-                <div key={f.id} className="grid grid-cols-2 gap-2 rounded-xl border border-border p-3 md:grid-cols-[1fr_1fr_1fr_1fr_1.5fr_auto]">
+                <div key={f.id} className="grid grid-cols-2 gap-2 rounded-xl border border-border p-3 md:grid-cols-[1fr_1fr_1fr_1fr_1fr_1.5fr_auto]">
                   <Select aria-label="المنطقة" {...rules.register(`windows.${i}.zone`, { setValueAs: (v) => v || null })}>
                     <option value="">عام للبلد كله (غير خاص بمنطقة)</option>
                     {CLIMATE_ZONES.map((z) => <option key={z} value={z}>{CLIMATE_ZONE_LABELS[z]}</option>)}
@@ -345,11 +354,15 @@ export function CropEditor({ crop, cropId, published }: { crop: Crop | null; cro
                   <Select aria-label="الطريقة" {...rules.register(`windows.${i}.method`)}>
                     {PLANTING_METHODS.map((m) => <option key={m} value={m}>{METHOD_LABELS[m]}</option>)}
                   </Select>
+                  <Select aria-label="درجة الموعد" {...rules.register(`windows.${i}.confidence`)}>
+                    <option value="documented">موعد موثّق</option>
+                    <option value="estimated">{f.optional ? "تقديري (عروة إضافية)" : "تقديري"}</option>
+                  </Select>
                   <Input aria-label="ملاحظة" placeholder="ملاحظة (اختياري)" {...rules.register(`windows.${i}.note`)} />
                   <Button variant="danger-ghost" size="icon" aria-label="حذف الموعد" onClick={() => windows.remove(i)}><Trash2 /></Button>
                 </div>
               ))}
-              <Button variant="outline" className="self-start" onClick={() => windows.append({ zone: "highland", countryCode: "", startMonth: 3, endMonth: 4, method: "transplanting", note: "", sourceId: "", sourceDetail: "" })}>
+              <Button variant="outline" className="self-start" onClick={() => windows.append({ zone: "highland", countryCode: "", startMonth: 3, endMonth: 4, method: "transplanting", note: "", sourceId: "", sourceDetail: "", confidence: "documented", optional: false })}>
                 <Plus /> إضافة موعد
               </Button>
             </CardContent>

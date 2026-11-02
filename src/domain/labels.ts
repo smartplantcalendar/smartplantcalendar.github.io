@@ -4,6 +4,7 @@ import type {
   DataStatus,
   Difficulty,
   GuideSection,
+  IrrigationSystem,
   LifeCycle,
   PlantingMethod,
   PlantingStatus,
@@ -13,6 +14,7 @@ import type {
   TaskStatus,
   TaskType,
   WaterNeed,
+  ZoneSuitability,
 } from "./types";
 
 export const CLIMATE_ZONE_LABELS: Record<ClimateZone, string> = {
@@ -150,10 +152,27 @@ export const SEASON_MONTHS: Record<Season, number[]> = {
   autumn: [9, 10, 11],
 };
 
+/** The farmer-facing caveat shown wherever an estimated date appears. */
+export const ESTIMATE_NOTICE = "هذه مواعيد تقديرية قد تختلف بحسب الصنف والمنطقة والطقس.";
+
+export const ZONE_SUITABILITY_LABELS: Record<ZoneSuitability, string> = {
+  possible: "ممكن مبدئيًا ويحتاج تحققًا",
+  needs_irrigation: "مشروط بريّ كافٍ وتحليل الموقع",
+  needs_frost_protection: "مشروط بالحماية من الصقيع",
+  local_guidance: "معلومة محلية استرشادية تحتاج تحققًا",
+  not_recommended: "لا يُوصى بالزراعة المكشوفة (غير ملائم غالبًا)",
+};
+
+export const IRRIGATION_SYSTEM_LABELS: Record<IrrigationSystem, string> = {
+  supplemental: "زراعة مكشوفة مع ريّ داعم",
+  irrigated_only: "زراعة مكشوفة مروية فقط",
+};
+
 export const DATA_STATUS_LABELS: Record<DataStatus, string> = {
   preliminary: "بيانات أولية إرشادية",
   reviewed: "مراجعة من مختص",
   incomplete: "معلومات غير مكتملة",
+  estimated: "مواعيد تقديرية",
 };
 
 export const TASK_TYPE_LABELS: Record<TaskType, string> = {

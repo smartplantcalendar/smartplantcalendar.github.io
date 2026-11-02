@@ -18,8 +18,8 @@
  */
 import { addMonths, daysInMonth, diffDays, parseISODate, toISODate } from "@/lib/dates";
 import { formatDays, formatMonthRange, monthName } from "@/lib/format";
-import { CLIMATE_ZONE_LABELS, COUNTRY_LABELS, GREENHOUSE_NOTICE, METHOD_LABELS, SPACES_WITHOUT_RULES, SPACE_TYPE_LABELS } from "./labels";
-import { isGeneralOnly, mainWindowsForZone, monthInWindow, propagationMethods, windowsForZone } from "./planting-windows";
+import { CLIMATE_ZONE_LABELS, COUNTRY_LABELS, ESTIMATE_NOTICE, GREENHOUSE_NOTICE, METHOD_LABELS, SPACES_WITHOUT_RULES, SPACE_TYPE_LABELS, ZONE_SUITABILITY_LABELS } from "./labels";
+import { isEstimatedOnly, isGeneralOnly, isNotRecommended, mainWindowsForZone, monthInWindow, propagationMethods, windowsForZone, zoneEstimateFor } from "./planting-windows";
 import type { ClimateZone, Crop, ISODate, PlantingMethod, PlantingWindow, SpaceType } from "./types";
 import type { WeatherAlert } from "./weather";
 
@@ -61,6 +61,8 @@ export interface Recommendation {
   spaceSuitable: boolean;
   /** Based only on general country-wide dates (not verified for the zone). */
   general: boolean;
+  /** Based only on imported ESTIMATES (never documented): ranked after documented crops. */
+  estimated: boolean;
   reasons: string[];
   warnings: string[];
 }
@@ -113,8 +115,13 @@ export function recommendCrop(crop: Crop, input: RecommendationInput): Recommend
       ? mainWindowsForZone(crop, zone, input.country)
       : windowsForZone(crop, zone, input.country).filter((w) => methodAllowed(w.method, group) && !secondary.includes(w.method));
   const general = isGeneralOnly(windows);
+  const estimated = isEstimatedOnly(windows);
   const countryName = COUNTRY_LABELS[windows[0]?.countryCode ?? ""] ?? "المنطقة";
-  const where = general ? `عمومًا في ${countryName} (موعد عام غير خاص بمنطقتك)` : `لمنطقتك (${zoneLabel})`;
+  const where = estimated
+    ? `تقديريًا لمنطقتك (${zoneLabel})`
+    : general
+      ? `عمومًا في ${countryName} (موعد عام غير خاص بمنطقتك)`
+      : `لمنطقتك (${zoneLabel})`;
   const noRulesSpace = SPACES_WITHOUT_RULES.includes(spaceType);
   // An empty list means "not documented yet", not "unsuitable everywhere".
   const spaceUnknown = crop.spaceTypes.length === 0;
@@ -127,17 +134,27 @@ export function recommendCrop(crop: Crop, input: RecommendationInput): Recommend
     windows,
     spaceSuitable,
     general,
+    estimated,
     reasons,
     warnings,
   };
 
   if (windows.length === 0) {
     reasons.push(
-      group === "all"
-        ? `لا تتوفر في قاعدة البيانات مواعيد زراعة لهذا المحصول في المنطقة ${zoneLabel}.`
-        : `لا توجد مواعيد مسجلة لطريقة «${METHOD_GROUP_LABELS[group]}» في المنطقة ${zoneLabel}.`,
+      isNotRecommended(crop, zone, input.country)
+        ? `تقدير: غير ملائم غالبًا للزراعة المكشوفة في المنطقة ${zoneLabel}، لذلك لا نوصي بزراعته فيها.`
+        : group === "all"
+          ? `لا تتوفر في قاعدة البيانات مواعيد زراعة لهذا المحصول في المنطقة ${zoneLabel}.`
+          : `لا توجد مواعيد مسجلة لطريقة «${METHOD_GROUP_LABELS[group]}» في المنطقة ${zoneLabel}.`,
     );
     return { ...base, status: "no_data", activeWindow: null, method: null, daysLeftInWindow: null, nextWindowStart: null, daysUntilNextWindow: null };
+  }
+
+  if (estimated) {
+    // Estimates are never presented as a firm recommendation.
+    warnings.push(`${ESTIMATE_NOTICE} ليست مواعيد موثّقة علميًا؛ تأكد من الإرشاد الزراعي المحلي.`);
+    const suitability = zoneEstimateFor(crop, zone, input.country)?.suitability;
+    if (suitability && suitability !== "possible") warnings.push(`تقدير لمنطقتك: ${ZONE_SUITABILITY_LABELS[suitability]}.`);
   }
 
   if (spaceUnknown && !noRulesSpace) {
@@ -215,7 +232,8 @@ export function recommendCrop(crop: Crop, input: RecommendationInput): Recommend
 export function compareRecommendations(a: Recommendation, b: Recommendation): number {
   const s = STATUS_ORDER.indexOf(a.status) - STATUS_ORDER.indexOf(b.status);
   if (s !== 0) return s;
-  // Zone-specific dates before general country-wide ones.
+  // Documented dates before estimates, zone-specific dates before general ones.
+  if (a.estimated !== b.estimated) return a.estimated ? 1 : -1;
   if (a.general !== b.general) return a.general ? 1 : -1;
   if (a.status === "now" || a.status === "protect") {
     if (a.spaceSuitable !== b.spaceSuitable) return a.spaceSuitable ? -1 : 1;

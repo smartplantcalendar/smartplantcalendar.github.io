@@ -1,4 +1,4 @@
-import type { Crop, CropGuideEntry, PlantingWindow, TaskTemplate } from "@/domain/types";
+import { CLIMATE_ZONES, type Crop, type CropGuideEntry, type CropPhaseWindow, type PlantingWindow, type TaskTemplate, type ZoneEstimate } from "@/domain/types";
 
 /* Row shapes returned by Supabase for the crop catalogue. */
 export interface CropRow {
@@ -28,6 +28,10 @@ export interface CropRow {
   image_alt: string | null;
   data_status: Crop["dataStatus"];
   source_note: string | null;
+  estimate_dataset?: string | null;
+  estimate_harvest_meaning?: string | null;
+  estimate_note?: string | null;
+  estimate_links?: string[] | null;
   is_published?: boolean;
   crop_planting_windows?: {
     zone: PlantingWindow["zone"];
@@ -38,7 +42,27 @@ export interface CropRow {
     note: string | null;
     source_id?: string | null;
     source_detail?: string | null;
+    confidence?: "documented" | "estimated" | null;
+    optional?: boolean | null;
     sort_order: number;
+  }[];
+  crop_phase_windows?: {
+    kind: CropPhaseWindow["kind"];
+    zone: CropPhaseWindow["zone"];
+    country_code: string;
+    start_month: number;
+    end_month: number;
+    optional: boolean | null;
+    sort_order: number;
+  }[];
+  crop_zone_estimates?: {
+    zone: ZoneEstimate["zone"];
+    country_code: string;
+    suitability: ZoneEstimate["suitability"];
+    irrigation: ZoneEstimate["irrigation"];
+    days_to_first_harvest: number | null;
+    years_to_first_yield: number | null;
+    not_applicable: ZoneEstimate["notApplicable"] | null;
   }[];
   crop_task_templates?: {
     key: string;
@@ -55,7 +79,7 @@ export interface CropRow {
 }
 
 export const CROP_SELECT =
-  "*, crop_planting_windows(*), crop_task_templates(*), crop_guides(*)";
+  "*, crop_planting_windows(*), crop_task_templates(*), crop_guides(*), crop_phase_windows(*), crop_zone_estimates(*)";
 
 const bySort = <T extends { sort_order: number }>(a: T, b: T) => a.sort_order - b.sort_order;
 
@@ -96,7 +120,37 @@ export function mapCropRow(row: CropRow): Crop {
       note: w.note ?? undefined,
       sourceId: w.source_id ?? undefined,
       sourceDetail: w.source_detail ?? undefined,
+      ...(w.confidence === "estimated" ? { confidence: "estimated" as const } : {}),
+      ...(w.optional ? { optional: true } : {}),
     })),
+    phases: [...(row.crop_phase_windows ?? [])].sort(bySort).map((p) => ({
+      kind: p.kind,
+      zone: p.zone,
+      countryCode: p.country_code,
+      startMonth: p.start_month,
+      endMonth: p.end_month,
+      confidence: "estimated" as const,
+      ...(p.optional ? { optional: true } : {}),
+    })),
+    zoneEstimates: [...(row.crop_zone_estimates ?? [])]
+      .sort((a, b) => CLIMATE_ZONES.indexOf(a.zone) - CLIMATE_ZONES.indexOf(b.zone))
+      .map((z) => ({
+        zone: z.zone,
+        countryCode: z.country_code,
+        suitability: z.suitability,
+        irrigation: z.irrigation,
+        daysToFirstHarvest: z.days_to_first_harvest,
+        yearsToFirstYield: z.years_to_first_yield,
+        notApplicable: z.not_applicable ?? [],
+      })),
+    estimate: row.estimate_dataset
+      ? {
+          dataset: row.estimate_dataset,
+          harvestMeaning: row.estimate_harvest_meaning ?? null,
+          note: row.estimate_note ?? "",
+          contextUrls: row.estimate_links ?? [],
+        }
+      : null,
     templates: [...(row.crop_task_templates ?? [])].sort(bySort).map((t) => ({
       key: t.key,
       type: t.type,

@@ -16,7 +16,7 @@ async function chooseCityInPlanner(page: Page, cityId: string) {
  * edit a task → mark it complete. Also asserts there is no stray English UI.
  */
 
-const ENGLISH_ALLOWED = /Open-Meteo|OpenStreetMap|Nominatim|Copernicus|GPS|Supabase|Solanum|Cucumis|Allium|Lactuca|Capsicum|Mentha|Origanum|Fragaria|Olea|Vitis|spp\.|ananassa|lycopersicum|sativus|tuberosum|cepa|sativum|annuum|syriacum|europaea|vinifera|×/g;
+const ENGLISH_ALLOWED = /Open-Meteo|OpenStreetMap|Nominatim|Copernicus|GPS|Supabase|Solanum|Cucumis|Allium|Lactuca|Capsicum|Mentha|Origanum|Fragaria|Olea|Vitis|spp\.|ananassa|lycopersicum|sativus|tuberosum|cepa|sativum|annuum|syriacum|europaea|vinifera|melongena|×/g;
 
 async function expectNoStrayEnglish(page: Page) {
   const text = await page.locator("body").innerText();
@@ -102,6 +102,34 @@ test("guest can plan a crop and manage tasks in the calendar", async ({ page, is
       expect(overflow, `horizontal overflow on ${path}`).toBeLessThanOrEqual(0);
     }
   }
+});
+
+test("an estimated crop reaches the planner and the calendar, labelled as an estimate", async ({ page }) => {
+  const planted = `${NEXT_YEAR}-04-15`;
+  const harvest = `${NEXT_YEAR}-07-04`; // + 80 days (highland estimate)
+  await go(page, "/crops/eggplant/");
+  await expect(page.getByTestId("estimate-notice")).toBeVisible();
+  await expectNoStrayEnglish(page);
+  await page.getByRole("link", { name: /أنشئ خطة زراعة الباذنجان/ }).click();
+  await chooseCityInPlanner(page, "ps-hebron");
+  await page.getByRole("button", { name: "التالي" }).click();
+  await page.getByRole("radio", { name: /حديقة/ }).first().click();
+  await page.getByRole("button", { name: "التالي" }).click();
+  await expect(page.getByRole("button", { name: /الباذنجان/, pressed: true })).toBeVisible();
+  await page.getByRole("button", { name: "التالي" }).click();
+  await page.getByLabel("تاريخ الزراعة في الأرض").fill(planted);
+  await page.getByLabel("اسم المساحة").fill("حديقة البيت");
+  await expect(page.getByText(/ضمن المواعيد المقترحة لمنطقتك/)).toBeVisible();
+  await page.getByRole("button", { name: "التالي" }).click();
+  await expect(page.getByRole("heading", { name: "راجع خطتك" })).toBeVisible();
+  await expect(page.getByText("بداية القطف التقديرية نحو", { exact: false })).toBeVisible();
+  await expect(page.getByText(/هذه مواعيد تقديرية قد تختلف بحسب الصنف والمنطقة والطقس/).first()).toBeVisible();
+  await page.getByRole("button", { name: "أنشئ الخطة" }).click();
+  await expect(page.getByRole("heading", { name: "خطتك جاهزة" })).toBeVisible();
+  await go(page, `/calendar/?date=${harvest}`);
+  const dayPanel = page.locator("section[aria-labelledby='day-title']");
+  await expect(dayPanel.getByText("بداية القطف التقديرية لـالباذنجان")).toBeVisible();
+  await expectNoStrayEnglish(page);
 });
 
 test("weather failure shows an Arabic message and the page keeps working", async ({ page }) => {

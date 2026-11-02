@@ -468,7 +468,9 @@ function PlannerWizardInner({ crops, zoneOverrides = {} }: { crops: Crop[]; zone
                       <p className="text-sm text-muted-foreground">
                         {formatNumber(plan.tasks.length)} مهمة
                         {plan.expectedHarvestStart && plan.expectedHarvestEnd
-                          ? ` · الحصاد المتوقع تقريبًا بين ${formatDate(plan.expectedHarvestStart, { year: false })} و${formatDate(plan.expectedHarvestEnd, { year: false })}`
+                          ? plan.expectedHarvestStart === plan.expectedHarvestEnd
+                            ? ` · بداية القطف التقديرية نحو ${formatDate(plan.expectedHarvestStart, { year: false })}`
+                            : ` · الحصاد المتوقع تقريبًا بين ${formatDate(plan.expectedHarvestStart, { year: false })} و${formatDate(plan.expectedHarvestEnd, { year: false })}`
                           : " · لا يوجد موعد حصاد محدد"}
                       </p>
                     </div>

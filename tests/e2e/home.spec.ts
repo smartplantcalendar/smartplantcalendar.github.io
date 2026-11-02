@@ -112,8 +112,10 @@ test.describe("expanded crop catalogue", () => {
     await search(page).fill("جبس");
     const option = page.getByRole("option", { name: /البطيخ/ });
     await expect(option).toContainText("(الجبس)");
-    await expect(option).toContainText("لا توجد معلومات موثوقة كافية");
-    await expect(option).toHaveAttribute("data-status", "no_data");
+    // Watermelon has only ESTIMATED dates: shown, and labelled as estimates.
+    await expect(option).toHaveAttribute("data-status", "later");
+    await expect(option).toContainText("ليس وقته حاليًا");
+    await expect(option).toContainText("نيسان – أيار (تقديري)");
 
     await search(page).fill("بندوره");
     await expect(page.getByRole("option", { name: /البندورة/ })).toHaveAttribute("data-status", "later");
@@ -124,14 +126,40 @@ test.describe("expanded crop catalogue", () => {
     await expect(page.getByRole("option", { name: /الملوخية/ })).toBeVisible();
   });
 
-  test("an incomplete crop page says so and cannot be planned", async ({ page }) => {
+  test("an estimated crop page labels every date as an estimate", async ({ page }) => {
+    await page.clock.setFixedTime(new Date("2026-04-15T09:00:00+03:00"));
     await seedLocation(page, HEBRON);
     await go(page, "/crops/eggplant/");
     await expect(page.getByRole("heading", { level: 1 })).toHaveText("الباذنجان");
-    await expect(page.getByText("معلومات غير مكتملة").first()).toBeVisible();
-    await expect(page.getByTestId("planting-status")).toHaveAttribute("data-status", "no_data");
-    await expect(page.getByRole("link", { name: /أنشئ خطة زراعة/ })).toHaveCount(0);
-    await expect(page.getByText("لا يمكن إنشاء خطة لهذا المحصول بعد")).toBeVisible();
+    await expect(page.getByText("مواعيد تقديرية").first()).toBeVisible();
+    await expect(page.getByTestId("estimate-notice")).toContainText("هذه مواعيد تقديرية قد تختلف بحسب الصنف والمنطقة والطقس.");
+    const status = page.getByTestId("planting-status");
+    await expect(status).toHaveAttribute("data-status", "now");
+    await expect(status).toHaveAttribute("data-estimated", "true");
+    await expect(status).toContainText("ضمن الموعد التقديري للزراعة");
+    await expect(page.getByTestId("estimated-source").first()).toHaveText("تقدير غير موثّق");
+    // Flowering and harvest are separate from planting, per zone.
+    const highland = page.getByTestId("phases-highland");
+    await expect(highland.getByTestId("phase-flowering")).toHaveText("حزيران – تشرين الأول");
+    await expect(highland.getByTestId("phase-harvest")).toHaveText("تموز – تشرين الأول");
+    await expect(highland.getByTestId("phase-days")).toHaveText("نحو 80 يومًا");
+    await expect(highland.getByTestId("phase-years")).toHaveText("لا ينطبق");
+    await expect(page.getByTestId("optional-seasons")).toContainText("عروة ربيعية مروية");
+    // Context links are named in Arabic and are not presented as proof.
+    await expect(page.getByTestId("context-links")).toContainText("ليست إثباتًا لكل موعد");
+    expect(await page.getByTestId("context-links").innerText()).not.toMatch(/[A-Za-z]{3,}/);
+    // Estimated crops can be planned (the plan is labelled tentative).
+    await expect(page.getByRole("link", { name: /أنشئ خطة زراعة/ })).toBeVisible();
+
+    // «غير ملائم غالبًا» is a restriction shown per zone, not a date.
+    await go(page, "/crops/apple/");
+    await expect(page.getByTestId("zone-not-recommended")).toHaveCount(3);
+    await expect(page.getByTestId("zone-not-recommended").first()).toContainText("لا يُوصى بالزراعة المكشوفة");
+
+    // Recommendations label estimates and keep documented crops first.
+    await go(page, "/recommendations/");
+    await expect(page.getByTestId("rec-eggplant")).toContainText("مواعيد تقديرية");
+    await expect(page.getByTestId("rec-eggplant")).toContainText("هذه مواعيد تقديرية قد تختلف");
   });
 
   test("the crop guide pages results and keeps the shared search", async ({ page }) => {
@@ -250,9 +278,10 @@ test.describe("expanded crop catalogue", () => {
     await go(page, "/crops/olive/");
     await expect(page.getByTestId("fact-first-yield")).toContainText("سنوات");
     await expect(page.getByTestId("fact-flowering")).toContainText("غير موثّق بعد");
-    // Narcissus: no invented date.
+    // Narcissus: only an estimated date (October–November), labelled as such.
     await go(page, "/crops/narcissus/");
-    await expect(page.getByTestId("planting-status")).toHaveAttribute("data-status", "no_data");
+    await expect(page.getByTestId("planting-status")).toHaveAttribute("data-status", "later");
+    await expect(page.getByTestId("planting-status")).toHaveAttribute("data-estimated", "true");
   });
 
   test("trees default to a ready sapling; cuttings and offshoot propagation stay secondary", async ({ page }) => {
@@ -263,8 +292,9 @@ test.describe("expanded crop catalogue", () => {
       await expect(page.getByTestId("planting-title")).toHaveText(`موعد غرس شجرة ${name}`);
       await expect(page.getByTestId("fact-methods")).toContainText("غرس الغرسة الجاهزة في الأرض");
       await expect(page.getByTestId("fact-methods")).not.toContainText("العُقَل");
-      // The sapling date is not documented: it stays unknown, never borrowed from cuttings.
-      await expect(page.getByTestId("planting-status")).toHaveAttribute("data-status", "no_data");
+      // The sapling date is an estimate (December–February), never borrowed from cuttings.
+      await expect(page.getByTestId("planting-status")).toHaveAttribute("data-status", "now");
+      await expect(page.getByTestId("planting-status")).toHaveAttribute("data-estimated", "true");
       await page.getByText("لمن يريد إكثار الغرسة بنفسه").click();
       await expect(page.getByTestId("cuttings-note")).toContainText("ليس موعد غرس الشجرة الجاهزة");
     }

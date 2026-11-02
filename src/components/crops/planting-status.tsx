@@ -27,7 +27,15 @@ const ICON: Record<SimpleStatusKind, typeof CalendarCheck2> = {
  * not now / no reliable information. Rendered in the browser because it
  * depends on the visitor's location and today's date.
  */
-export function PlantingStatus({ crop, className, showDetail = true }: { crop: Pick<Crop, "windows">; className?: string; showDetail?: boolean }) {
+export function PlantingStatus({
+  crop,
+  className,
+  showDetail = true,
+}: {
+  crop: Pick<Crop, "windows" | "propagation" | "primaryMethod" | "zoneEstimates">;
+  className?: string;
+  showDetail?: boolean;
+}) {
   const { location, today, mode } = useAppData();
   if (mode === "loading") return <Skeleton className={cn("h-7 w-40 rounded-full", className)} />;
   if (!location) {
@@ -48,8 +56,8 @@ export function PlantingStatus({ crop, className, showDetail = true }: { crop: P
       : described.detail;
   const Icon = ICON[status.kind];
   return (
-    <div className={cn("flex flex-col items-start gap-1", className)} data-status={status.kind} data-general={status.general || undefined} data-testid="planting-status">
-      <span className={cn("inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-sm font-bold", status.general && status.kind === "now" ? "bg-warning-soft text-warning" : TONE[status.kind])}>
+    <div className={cn("flex flex-col items-start gap-1", className)} data-status={status.kind} data-general={status.general || undefined} data-estimated={status.estimated || undefined} data-testid="planting-status">
+      <span className={cn("inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-sm font-bold", (status.general || status.estimated) && status.kind === "now" ? "bg-warning-soft text-warning" : TONE[status.kind])}>
         <Icon className="size-4 shrink-0" aria-hidden />
         {title}
       </span>
