@@ -83,6 +83,7 @@ export const CATEGORY_LABELS: Record<CropCategory, string> = {
   cereal: "حبوب",
   forage: "أعلاف",
   field_crop: "محاصيل حقلية",
+  ornamental: "أزهار ونباتات زينة",
 };
 
 export const DIFFICULTY_LABELS: Record<Difficulty, string> = {
@@ -108,15 +109,30 @@ export const LIFE_CYCLE_LABELS: Record<LifeCycle, string> = {
   perennial: "معمّر",
 };
 
+/** Full description of each method (planting in the final place unless stated). */
 export const METHOD_LABELS: Record<PlantingMethod, string> = {
-  direct_sowing: "بذر مباشر في الأرض",
-  transplanting: "نقل الأشتال إلى الأرض",
-  tubers: "زراعة درنات",
-  cloves: "زراعة فصوص",
-  cuttings: "عُقَل أو جذامير",
-  saplings: "غراس",
-  nursery_sowing: "بذر في المشتل أو الصواني",
-  offshoots: "فسائل أو خلفات",
+  direct_sowing: "بذر البذور مباشرة في الأرض",
+  transplanting: "زراعة الأشتال الجاهزة في الأرض",
+  tubers: "زراعة الدرنات في الأرض",
+  cloves: "زراعة الفصوص في الأرض",
+  cuttings: "زراعة العُقَل في الأرض",
+  saplings: "غرس الغرسة الجاهزة في الأرض",
+  nursery_sowing: "بذر البذور في المشتل لتجهيز الأشتال",
+  offshoots: "زراعة الفسائل في الأرض",
+  bulbs: "زراعة الأبصال في الأرض",
+};
+
+/** Short label for lists, e.g. «زراعة الأشتال في الأرض: آذار – نيسان». */
+export const METHOD_SHORT_LABELS: Record<PlantingMethod, string> = {
+  direct_sowing: "البذر في الأرض",
+  transplanting: "زراعة الأشتال في الأرض",
+  tubers: "زراعة الدرنات",
+  cloves: "زراعة الفصوص",
+  cuttings: "زراعة العُقَل",
+  saplings: "الغرس",
+  nursery_sowing: "البذر في المشتل",
+  offshoots: "زراعة الفسائل",
+  bulbs: "زراعة الأبصال",
 };
 
 export const SEASON_LABELS: Record<Season, string> = {

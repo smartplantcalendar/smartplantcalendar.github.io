@@ -28,16 +28,17 @@ export const SOON_DAYS = 45;
 export const METHOD_GROUPS = {
   all: null,
   seeds: ["direct_sowing"],
-  seedlings: ["nursery_sowing", "transplanting", "saplings", "cuttings", "offshoots"],
-  tubers: ["tubers", "cloves"],
+  // Ready material planted in the ground; nursery sowing is never a planting date here.
+  seedlings: ["transplanting", "saplings", "cuttings", "offshoots"],
+  tubers: ["tubers", "cloves", "bulbs"],
 } as const satisfies Record<string, readonly PlantingMethod[] | null>;
 export type MethodGroup = keyof typeof METHOD_GROUPS;
 
 export const METHOD_GROUP_LABELS: Record<MethodGroup, string> = {
   all: "كل الطرق",
-  seeds: "بذور (بذر مباشر)",
-  seedlings: "أشتال (المشتل والنقل) أو غراس أو عُقَل أو فسائل",
-  tubers: "درنات أو فصوص",
+  seeds: "بذور تُبذر مباشرة في الأرض",
+  seedlings: "أشتال أو غراس أو عُقَل أو فسائل جاهزة",
+  tubers: "درنات أو فصوص أو أبصال",
 };
 
 export type RecommendationStatus = "now" | "protect" | "soon" | "later" | "no_data";

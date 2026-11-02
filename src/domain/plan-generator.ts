@@ -7,7 +7,7 @@
 import { addDays, monthOf } from "@/lib/dates";
 import { formatShortDate } from "@/lib/format";
 import { CONTAINER_SPACES, GREENHOUSE_NOTICE, SPACES_WITHOUT_RULES, SPACE_TYPE_LABELS } from "./labels";
-import { evaluateWindowFit, isGeneralOnly, windowsForZone, type WindowFit } from "./planting-windows";
+import { evaluateWindowFit, isGeneralOnly, mainWindowsForZone, primaryMethod, windowsForZone, type WindowFit } from "./planting-windows";
 import type { ClimateZone, Crop, ISODate, PlantingMethod, SpaceType, TaskTemplate, TaskType } from "./types";
 
 export interface PlanInput {
@@ -56,6 +56,7 @@ const PLANT_TITLE: Record<PlantingMethod, (name: string) => string> = {
   cuttings: (n) => `زراعة عُقَل ${n}`,
   saplings: (n) => `زراعة غراس ${n}`,
   offshoots: (n) => `زراعة فسائل ${n}`,
+  bulbs: (n) => `زراعة أبصال ${n}`,
 };
 
 /**
@@ -63,8 +64,13 @@ const PLANT_TITLE: Record<PlantingMethod, (name: string) => string> = {
  * crop-specific task rules yet. They contain nothing crop-specific beyond the
  * planting method of the zone: no fertiliser doses, no harvest date.
  */
-export function genericTemplates(crop: Pick<Crop, "name" | "windows">, zone: ClimateZone, country?: string | null): TaskTemplate[] {
-  const method = windowsForZone(crop, zone, country)[0]?.method ?? crop.windows[0]?.method ?? "direct_sowing";
+export function genericTemplates(
+  crop: Pick<Crop, "name" | "windows" | "propagation" | "primaryMethod">,
+  zone: ClimateZone,
+  country?: string | null,
+): TaskTemplate[] {
+  // The plan starts on the day the plant goes into its final place.
+  const method = mainWindowsForZone(crop, zone, country)[0]?.method ?? primaryMethod(crop) ?? "direct_sowing";
   return [
     {
       key: "generic-soil",

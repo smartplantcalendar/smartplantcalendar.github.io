@@ -39,6 +39,7 @@ export const CROP_CATEGORIES = [
   "cereal",
   "forage",
   "field_crop",
+  "ornamental",
 ] as const;
 export type CropCategory = (typeof CROP_CATEGORIES)[number];
 
@@ -55,9 +56,12 @@ export const LIFE_CYCLES = ["annual", "perennial"] as const;
 export type LifeCycle = (typeof LIFE_CYCLES)[number];
 
 /**
- * How a crop goes into the ground. `nursery_sowing` (sowing seeds in trays or
- * a nursery bed) and `transplanting` (moving seedlings to their final place)
- * are different dates and must never be merged into one window.
+ * How a crop is planted. Every method except `nursery_sowing` means planting
+ * in the FINAL place (field, garden, pot) with ready material: seeds sown
+ * directly, ready seedlings from a nursery, tubers, cloves, bulbs, cuttings,
+ * offshoots or ready saplings/trees. `nursery_sowing` (sowing seeds in trays
+ * to raise your own seedlings) is a different, earlier date: it is kept for
+ * «لمن يريد تجهيز الأشتال بنفسه» only and never used as the planting date.
  */
 export const PLANTING_METHODS = [
   "direct_sowing",
@@ -68,7 +72,11 @@ export const PLANTING_METHODS = [
   "saplings",
   "nursery_sowing",
   "offshoots",
+  "bulbs",
 ] as const;
+
+/** Methods that put the plant in its final place (everything but the nursery). */
+export const FIELD_METHODS = PLANTING_METHODS.filter((m) => m !== "nursery_sowing");
 export type PlantingMethod = (typeof PLANTING_METHODS)[number];
 
 export const SEASONS = ["winter", "spring", "summer", "autumn"] as const;
@@ -172,8 +180,16 @@ export interface Crop {
   difficulty: Difficulty | null;
   sun: SunRequirement | null;
   water: WaterNeed | null;
-  /** Usual ways to establish the crop (general botanical knowledge, not dates). */
+  /** Usual ways to establish the crop, most common first (general botanical knowledge, not dates). */
   propagation?: PlantingMethod[];
+  /** The most common way to plant it in the final place (default shown first). */
+  primaryMethod?: PlantingMethod | null;
+  /** When it flowers — separate from planting and harvest; null = not documented. */
+  floweringNote?: string | null;
+  /** When it is harvested/picked (season), for crops where days-to-harvest do not apply. */
+  harvestNote?: string | null;
+  /** Trees/perennials: time from planting in the ground to the first yield. */
+  firstYieldNote?: string | null;
   spaceTypes: SpaceType[];
   /**
    * Damaged by frost (warm-season crops). Drives frost warnings in

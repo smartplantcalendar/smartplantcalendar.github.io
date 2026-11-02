@@ -5,6 +5,7 @@ import { Badge } from "@/components/ui/badge";
 import { CATEGORY_LABELS, DATA_STATUS_LABELS, DIFFICULTY_LABELS, METHOD_LABELS, SUN_LABELS, WATER_LABELS } from "@/domain/labels";
 import type { Crop } from "@/domain/types";
 import { formatNumber } from "@/lib/format";
+import { fieldMethods } from "@/domain/planting-windows";
 import { cn } from "@/lib/utils";
 import { PlantingStatus } from "./planting-status";
 
@@ -61,11 +62,11 @@ export function CropCard({ crop, seasonText, className }: { crop: Crop; seasonTe
               <dd>{growthLabel(crop)}</dd>
             </div>
           ) : null}
-          {crop.dataStatus === "incomplete" && crop.propagation?.length ? (
+          {crop.dataStatus === "incomplete" && fieldMethods(crop).length ? (
             <div className="flex items-center gap-2">
               <Sprout className="size-4 text-brand-600" aria-hidden />
-              <dt className="sr-only">طرق الزراعة الشائعة</dt>
-              <dd>{crop.propagation.map((m) => METHOD_LABELS[m]).join("، ")}</dd>
+              <dt className="sr-only">طرق الزراعة في الأرض</dt>
+              <dd>{fieldMethods(crop).map((m) => METHOD_LABELS[m]).join("، ")}</dd>
             </div>
           ) : null}
         </dl>

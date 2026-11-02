@@ -399,11 +399,13 @@ function PlannerWizardInner({ crops, zoneOverrides = {} }: { crops: Crop[]; zone
           <section aria-labelledby="s-details" className="flex flex-col gap-5">
             <div>
               <h2 id="s-details" className="text-2xl font-extrabold">تفاصيل الزراعة</h2>
-              <p className="mt-1 text-muted-foreground">تاريخ الزراعة هو الأساس الذي نحسب منه كل المواعيد.</p>
+              <p className="mt-1 text-muted-foreground">
+                تاريخ زراعة النبات في مكانه النهائي (بذر البذور في الأرض، أو زراعة الأشتال الجاهزة، أو غرس الغرسة) هو الأساس الذي نحسب منه كل المواعيد، وليس تاريخ بذره في المشتل.
+              </p>
             </div>
             <form className="grid gap-4 sm:grid-cols-2" noValidate onSubmit={(e) => e.preventDefault()}>
               <Field
-                label="تاريخ الزراعة أو الشتل"
+                label="تاريخ الزراعة في الأرض"
                 htmlFor="plantedOn"
                 error={form.formState.errors.plantedOn?.message}
                 hint={isValidISODate(plantedOn) ? formatDate(plantedOn, { weekday: true }) : undefined}

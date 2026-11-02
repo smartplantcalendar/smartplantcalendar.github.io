@@ -137,6 +137,9 @@ const ENTRIES: Entry[] = [
   ["persimmon", "الكاكا", ["الكاكي", "الخرما"], "Diospyros kaki", "tree", P, ["saplings"]],
   ["hawthorn", "الزعرور", ["الزعرور البلدي", "الزعرور الأحمر"], "Crataegus azarolus", "tree", P, ["saplings"]],
   ["sumac", "السماق", ["السمّاق", "السماق البلدي"], "Rhus coriaria", "tree", P, ["saplings", "cuttings"]],
+  // أزهار ونباتات زينة
+  ["narcissus", "النرجس", ["نرجس", "زهرة النرجس", "العبهر"], "Narcissus spp.", "ornamental", P, ["bulbs"]],
+  ["rose", "الورد", ["الورد البلدي", "الورد الجوري", "الجوري", "الوردة"], "Rosa spp.", "ornamental", P, ["saplings", "cuttings"]],
   ["caper", "القبار", ["الكبار", "الشفلح", "القبّار"], "Capparis spinosa", "herb", P, ["cuttings", "direct_sowing"]],
 ];
 

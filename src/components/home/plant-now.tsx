@@ -9,8 +9,9 @@ import { readRecommendationPrefs } from "@/components/recommendations/recommenda
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { useWeather } from "@/components/weather/weather-widget";
-import { CLIMATE_ZONE_LABELS, METHOD_LABELS } from "@/domain/labels";
+import { CLIMATE_ZONE_LABELS, METHOD_LABELS, METHOD_SHORT_LABELS } from "@/domain/labels";
 import { countryOfLocation } from "@/domain/location";
+import { mainWindowsForZone } from "@/domain/planting-windows";
 import { recommendCrops, upcomingStarts, type Recommendation } from "@/domain/recommendations";
 import type { Crop } from "@/domain/types";
 import { formatDate, formatMonthRange, monthName } from "@/lib/format";
@@ -55,7 +56,8 @@ function NowCard({ r, today }: { r: Recommendation; today: string }) {
 }
 
 function ExampleCard({ crop }: { crop: Crop }) {
-  const highland = crop.windows.filter((w) => w.zone === "highland");
+  // Main planting method only (never nursery dates), unscoped or Palestinian data for the highlands.
+  const highland = mainWindowsForZone(crop, "highland", "PS");
   return (
     <li className="home-reveal">
       <Link
@@ -67,7 +69,7 @@ function ExampleCard({ crop }: { crop: Crop }) {
           <p className="text-lg font-bold">{crop.name}</p>
           <p className="text-sm text-muted-foreground">
             {highland.length
-              ? `في المرتفعات: ${[...new Set(highland.map((w) => formatMonthRange(w.startMonth, w.endMonth)))].join("، ")}`
+              ? `${METHOD_SHORT_LABELS[highland[0].method]} في المرتفعات: ${[...new Set(highland.map((w) => formatMonthRange(w.startMonth, w.endMonth)))].join("، ")}`
               : "افتح الدليل لترى مواعيده"}
           </p>
         </div>

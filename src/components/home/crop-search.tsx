@@ -9,20 +9,24 @@ import { useAppData } from "@/components/providers/app-data-provider";
 import { ambiguityFor } from "@/domain/ambiguous-names";
 import { buildCropIndex, normalizeArabic, searchCropIndex } from "@/domain/crop-search";
 import { countryOfLocation } from "@/domain/location";
-import { describeSimpleStatus, simplePlantingStatus, windowsForZone, type SimpleStatusKind } from "@/domain/planting-windows";
+import { METHOD_SHORT_LABELS } from "@/domain/labels";
+import { describeSimpleStatus, mainWindowsForZone, simplePlantingStatus, type SimpleStatusKind } from "@/domain/planting-windows";
 import type { ClimateZone, Crop } from "@/domain/types";
 import { formatMonthRange } from "@/lib/format";
 import { cn } from "@/lib/utils";
 
 /** The fields the search needs; keeps the page payload small. */
-export type SearchCrop = Pick<Crop, "slug" | "name" | "otherNames" | "scientificName" | "imageUrl" | "imageAlt" | "windows">;
+export type SearchCrop = Pick<Crop, "slug" | "name" | "otherNames" | "scientificName" | "imageUrl" | "imageAlt" | "windows" | "propagation" | "primaryMethod">;
 
 const MAX_RESULTS = 6;
 
 /** Distinct month ranges of a crop's windows for one zone, e.g. "آذار – أيار، أيلول – تشرين الأول". */
+/** «زراعة الأشتال في الأرض: آذار – نيسان» for the crop's main method in the zone (never nursery dates). */
 function windowText(crop: SearchCrop, zone: ClimateZone, country: string | null): string | null {
-  const ranges = [...new Set(windowsForZone(crop, zone, country).map((w) => formatMonthRange(w.startMonth, w.endMonth)))];
-  return ranges.length ? ranges.join("، ") : null;
+  const windows = mainWindowsForZone(crop, zone, country);
+  if (!windows.length) return null;
+  const ranges = [...new Set(windows.map((w) => formatMonthRange(w.startMonth, w.endMonth)))];
+  return `${METHOD_SHORT_LABELS[windows[0].method]}: ${ranges.join("، ")}`;
 }
 
 const STATUS_TONE: Record<SimpleStatusKind, string> = {
@@ -202,7 +206,7 @@ export function CropSearch({ crops, ref }: { crops: SearchCrop[]; ref?: React.Re
                         <span className={cn("inline-flex rounded-full px-2 py-0.5 text-xs font-bold", status.general && status.kind === "now" ? "bg-warning-soft text-warning" : STATUS_TONE[status.kind])}>
                           {describeSimpleStatus(status).title}
                         </span>
-                        {months ? <p className="text-sm text-muted-foreground">يُزرع: {months}</p> : null}
+                        {months ? <p className="text-sm text-muted-foreground">{months}</p> : null}
                       </>
                     ) : (
                       <p className="flex items-start gap-1.5 text-sm text-muted-foreground">

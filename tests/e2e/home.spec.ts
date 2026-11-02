@@ -35,7 +35,7 @@ test.describe("home page", () => {
     await search(page).fill("بندوره");
     const option = page.getByRole("option", { name: /البندورة/ });
     await expect(option).toBeVisible();
-    await expect(option).toContainText("يُزرع:");
+    await expect(option).toContainText("زراعة الأشتال في الأرض: نيسان – أيار");
     await expect(search(page)).toHaveAttribute("aria-expanded", "true");
     await search(page).press("ArrowDown");
     await expect(option).toHaveAttribute("aria-selected", "true");
@@ -223,5 +223,46 @@ test.describe("expanded crop catalogue", () => {
     await seedLocation(page, { latitude: 31.857, longitude: 35.46, label: "أريحا والأغوار", regionId: "ps-jericho", zone: "jordan_valley" });
     await page.reload();
     await expect(status).toHaveAttribute("data-status", "now");
+  });
+
+  test("crop pages name the real planting operation", async ({ page }) => {
+    await page.clock.setFixedTime(new Date("2026-04-15T09:00:00+03:00"));
+    await seedLocation(page, HEBRON);
+    const cases: [string, string, string][] = [
+      ["tomato", "موعد زراعة البندورة في الأرض", "زراعة الأشتال الجاهزة في الأرض"],
+      ["olive", "موعد غرس شجرة الزيتون", "غرس الغرسة الجاهزة في الأرض"],
+      ["wheat", "موعد بذر القمح في الأرض", "بذر البذور مباشرة في الأرض"],
+      ["potato", "موعد زراعة درنات البطاطا", "زراعة الدرنات في الأرض"],
+      ["narcissus", "موعد زراعة أبصال النرجس", "زراعة الأبصال في الأرض"],
+    ];
+    for (const [slug, title, method] of cases) {
+      await go(page, `/crops/${slug}/`);
+      await expect(page.getByTestId("planting-title")).toHaveText(title);
+      await expect(page.getByRole("heading", { level: 2, name: new RegExp(`${title} حسب المنطقة`) })).toBeVisible();
+      await expect(page.getByText(method).first()).toBeVisible();
+    }
+    // Tomato: the planting date is for ready seedlings in the ground; nursery dates are optional and secondary.
+    await go(page, "/crops/tomato/");
+    await expect(page.getByTestId("planting-status")).toHaveAttribute("data-status", "now");
+    await page.getByText("لمن يريد تجهيز الأشتال بنفسه").click();
+    await expect(page.getByTestId("nursery-unknown")).toContainText("لا تتوفر لدينا مواعيد موثّقة لبذر البندورة في المشتل");
+    // Olive: planting, flowering and first yield are separate facts.
+    await go(page, "/crops/olive/");
+    await expect(page.getByTestId("fact-first-yield")).toContainText("سنوات");
+    await expect(page.getByTestId("fact-flowering")).toContainText("غير موثّق بعد");
+    // Narcissus: no invented date.
+    await go(page, "/crops/narcissus/");
+    await expect(page.getByTestId("planting-status")).toHaveAttribute("data-status", "no_data");
+  });
+
+  test("the planner asks for the date of planting in the ground", async ({ page }) => {
+    await seedLocation(page, HEBRON);
+    await go(page, "/planner/?crop=tomato");
+    await page.getByRole("button", { name: "التالي" }).click();
+    await page.getByRole("radio", { name: /حديقة/ }).first().click();
+    await page.getByRole("button", { name: "التالي" }).click();
+    await page.getByRole("button", { name: "التالي" }).click();
+    await expect(page.getByLabel("تاريخ الزراعة في الأرض")).toBeVisible();
+    await expect(page.getByText(/وليس تاريخ بذره في المشتل/)).toBeVisible();
   });
 });
