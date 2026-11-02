@@ -11,8 +11,22 @@ import { cn } from "@/lib/utils";
  * loading is hidden until its `load` event (see `.crop-photo` in globals.css),
  * so a visitor without JavaScript always sees it.
  */
-export function CropPhotoImage({ photo, sizes, priority, className }: { photo: CropPhoto; sizes: string; priority?: boolean; className?: string }) {
-  const largest = photo.srcSet[photo.srcSet.length - 1];
+export function CropPhotoImage({
+  photo,
+  sizes,
+  priority,
+  className,
+  maxWidth,
+}: {
+  photo: CropPhoto;
+  sizes: string;
+  priority?: boolean;
+  className?: string;
+  /** Leave out larger files (cards never need the 960 px file, even on dense phone screens). */
+  maxWidth?: number;
+}) {
+  const files = maxWidth ? photo.srcSet.filter((s, i) => s.width <= maxWidth || i === 0) : photo.srcSet;
+  const largest = files[files.length - 1];
   return (
     // eslint-disable-next-line @next/next/no-img-element -- static export: plain responsive <img> with pre-sized WebP files
     <img
@@ -26,7 +40,7 @@ export function CropPhotoImage({ photo, sizes, priority, className }: { photo: C
         delete e.currentTarget.dataset.pending;
       }}
       src={`${BASE_PATH}${largest.src}`}
-      srcSet={photo.srcSet.map((s) => `${BASE_PATH}${s.src} ${s.width}w`).join(", ")}
+      srcSet={files.map((s) => `${BASE_PATH}${s.src} ${s.width}w`).join(", ")}
       sizes={sizes}
       width={photo.width}
       height={photo.height}

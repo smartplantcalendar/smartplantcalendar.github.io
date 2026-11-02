@@ -161,6 +161,7 @@ async function fetchSelected() {
 }
 
 function writeReport(photos: Record<string, CropPhoto>, problems: string[]) {
+  const kept = JSON.parse(readFileSync(join(root, "data/crop-photos/kept-drawings.json"), "utf8")) as Record<string, string>;
   const withPhoto = SEED_CROPS.filter((c) => photos[c.slug]);
   const without = SEED_CROPS.filter((c) => !photos[c.slug]);
   const esc = (s: string) => s.replace(/\|/g, "\\|");
@@ -184,7 +185,9 @@ function writeReport(photos: Record<string, CropPhoto>, problems: string[]) {
     "",
     "## محاصيل بقيت بالرسم التوضيحي",
     "",
-    ...(without.length ? without.map((c) => `- ${c.name} (\`${c.slug}\`، ${c.scientificName ?? "—"})`) : ["لا يوجد."]),
+    "لم نجد لها صورة صحيحة ومرخصة تُظهر الجزء الذي يعرفه المزارع، فبقي الرسم بدل صورة قد تضلل.",
+    "",
+    ...(without.length ? without.map((c) => `- ${c.name} (\`${c.slug}\`، ${c.scientificName ?? "—"}): ${kept[c.slug] ?? "لم تُراجع بعد."}`) : ["لا يوجد."]),
     "",
     ...(problems.length ? ["## صور مختارة رُفضت عند التحقق", "", ...problems.map((p) => `- ${p}`), ""] : []),
   ];

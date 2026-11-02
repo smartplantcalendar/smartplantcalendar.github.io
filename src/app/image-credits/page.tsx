@@ -45,9 +45,11 @@ export default async function ImageCreditsPage() {
                   <div className="min-w-0 text-sm leading-6">
                     <Link href={`/crops/${c.slug}`} className="font-bold text-foreground hover:text-brand-700">{c.name}</Link>
                     {c.scientificName ? (
-                      <span dir="ltr" className="block text-xs italic text-subtle-foreground">{c.scientificName}</span>
+                      <span dir="ltr" translate="no" className="block text-xs italic text-subtle-foreground">{c.scientificName}</span>
                     ) : null}
-                    <span className="block">المصوّر: {credit.author || "غير مذكور"}</span>
+                    <span className="block">
+                      المصوّر: <span translate="no">{credit.author || "غير مذكور"}</span>
+                    </span>
                     <span className="block">
                       الترخيص:{" "}
                       {credit.licenseUrl ? (

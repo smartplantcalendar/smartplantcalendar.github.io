@@ -94,6 +94,15 @@ describe("the photo manifest", () => {
     }
   });
 
+  it("every crop has either a selected photo or a written reason to keep its drawing", () => {
+    const kept = JSON.parse(readFileSync(join(process.cwd(), "data/crop-photos/kept-drawings.json"), "utf8")) as Record<string, string>;
+    for (const c of SEED_CROPS) {
+      expect(Boolean(selection[c.slug]) !== Boolean(kept[c.slug]), c.slug).toBe(true);
+      if (kept[c.slug]) expect(CROP_PHOTOS[c.slug], c.slug).toBeUndefined();
+    }
+    expect(Object.keys(CROP_PHOTOS).length).toBe(Object.keys(selection).length);
+  });
+
   it("every photo is keyed by a crop slug, licensed, credited, sized and present on disk", () => {
     for (const [slug, p] of Object.entries(CROP_PHOTOS)) {
       expect(SEED_CROPS.some((c) => c.slug === slug), slug).toBe(true);

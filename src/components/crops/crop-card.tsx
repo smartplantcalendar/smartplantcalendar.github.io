@@ -25,7 +25,7 @@ export function CropCard({ crop, seasonText, className }: { crop: Crop; seasonTe
         className,
       )}
     >
-      <CropImage crop={crop} className="aspect-[5/3.4]" />
+      <CropImage crop={crop} className="aspect-[5/3.4]" sizes="(max-width: 640px) 100vw, (max-width: 1280px) 33vw, 25vw" maxPhotoWidth={640} />
       <div className="flex flex-1 flex-col gap-3 p-4">
         <div className="flex items-start justify-between gap-2">
           <div>

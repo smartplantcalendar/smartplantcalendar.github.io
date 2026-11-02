@@ -16,6 +16,7 @@ export function CropImage({
   sizes = "(max-width: 640px) 100vw, 33vw",
   priority,
   decorative,
+  maxPhotoWidth,
 }: {
   crop: Pick<Crop, "slug" | "name" | "imageUrl" | "imageAlt">;
   className?: string;
@@ -23,6 +24,8 @@ export function CropImage({
   priority?: boolean;
   /** Hidden from screen readers where the crop name is already in the text. */
   decorative?: boolean;
+  /** Largest photo file to offer (px); default: all sizes. */
+  maxPhotoWidth?: number;
 }) {
   const photo = crop.imageUrl ? null : CROP_PHOTOS[crop.slug];
   return (
@@ -37,7 +40,7 @@ export function CropImage({
           className="object-cover"
         />
       ) : photo ? (
-        <CropPhotoImage photo={photo} sizes={sizes} priority={priority} className="absolute inset-0" />
+        <CropPhotoImage photo={photo} sizes={sizes} priority={priority} maxWidth={maxPhotoWidth} className="absolute inset-0" />
       ) : (
         <CropArt slug={crop.slug} title={crop.imageAlt || `رسم توضيحي: ${crop.name}`} />
       )}

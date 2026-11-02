@@ -1,7 +1,8 @@
 #!/usr/bin/env node
 /**
  * Review helper for iNaturalist candidates (see docs/CROP_PHOTOS.md):
- *   node scripts/crop-photos/inat-sheets.mjs <photos.tsv> <observers.csv.gz> <out-dir> [per-crop=8]
+ *   node scripts/crop-photos/inat-sheets.mjs <photos.tsv> <observers.csv.gz> <out-dir> [per-crop=8] [--only a,b] [--skip previous/candidates.json]
+ * --only limits the crops; --skip leaves out photos already shown in an earlier round.
  * photos.tsv rows: photo_id, observation_uuid, observer_id, extension, license,
  *   width, height, slug, quality_grade, taxon_id (from inat-candidates.sh).
  * Picks up to N candidates per crop (research grade and landscape first),
@@ -14,7 +15,18 @@ import { createInterface } from "node:readline";
 import { join } from "node:path";
 import { execFileSync } from "node:child_process";
 
-const [tsv, observersGz, out, perArg] = process.argv.slice(2);
+const argv = process.argv.slice(2);
+const flag = (name) => {
+  const i = argv.indexOf(`--${name}`);
+  if (i < 0) return undefined;
+  const v = argv[i + 1];
+  argv.splice(i, 2);
+  return v;
+};
+const only = flag("only")?.split(",");
+const skipFile = flag("skip");
+const skipIds = new Set(skipFile ? Object.values(JSON.parse(readFileSync(skipFile, "utf8"))).flat().map((c) => c.photoId) : []);
+const [tsv, observersGz, out, perArg] = argv;
 const PER = Number(perArg ?? 8);
 const BUCKET = "https://inaturalist-open-data.s3.amazonaws.com";
 const { default: sharp } = await import("sharp");
@@ -25,6 +37,7 @@ for (const line of readFileSync(tsv, "utf8").split("\n")) {
   if (!line) continue;
   const [photoId, observationUuid, observerId, extension, license, width, height, slug, quality, taxonId] = line.split("\t");
   const row = { photoId: Number(photoId), observationUuid, observerId, extension, license, width: Number(width), height: Number(height), slug, quality, taxonId };
+  if ((only && !only.includes(slug)) || skipIds.has(row.photoId)) continue;
   if (!bySlug.has(slug)) bySlug.set(slug, []);
   bySlug.get(slug).push(row);
 }

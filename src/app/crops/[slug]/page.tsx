@@ -5,7 +5,7 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import { CropImage } from "@/components/brand/crop-image";
 import { CROP_PHOTOS } from "@/data/crop-photos";
-import { creditLine } from "@/domain/crop-photos";
+import { SOURCE_NAMES } from "@/domain/crop-photos";
 import { PlantingStatus } from "@/components/crops/planting-status";
 import { findSource, sourcesForCrop } from "@/data/crop-sources";
 import { otherMeanings } from "@/domain/ambiguous-names";
@@ -153,7 +153,7 @@ export default async function CropDetailPage({ params }: { params: Promise<{ slu
               {crop.scientificName ? (
                 <>
                   {crop.otherNames?.length ? " · " : ""}
-                  <span dir="ltr" className="italic">{crop.scientificName}</span>
+                  <span dir="ltr" translate="no" className="italic">{crop.scientificName}</span>
                 </>
               ) : null}
             </p>
@@ -195,7 +195,7 @@ export default async function CropDetailPage({ params }: { params: Promise<{ slu
           <CropImage crop={crop} priority sizes="(max-width: 1024px) 100vw, 45vw" className="aspect-[4/3] rounded-2xl border border-border shadow-md" />
           {photo ? (
             <figcaption className="text-xs leading-6 text-muted-foreground" data-testid="photo-credit">
-              {creditLine(photo.credit)} ·{" "}
+              الصورة: <span translate="no">{photo.credit.author || "مؤلف غير مذكور"}</span>، {photo.credit.license}، {SOURCE_NAMES[photo.credit.source]} ·{" "}
               <Link href={`/image-credits#${crop.slug}`} className="font-semibold text-brand-700 underline underline-offset-4">
                 مصادر الصور
               </Link>

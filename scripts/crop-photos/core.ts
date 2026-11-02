@@ -123,7 +123,8 @@ export function judgeInatPhoto(p: InatPhoto): Verdict {
     width: p.width,
     height: p.height,
     // "large" is at most 1024 px on the long side: enough for our 960 px file.
-    downloadUrl: `${INAT_BUCKET}/photos/${p.photoId}/large.${p.extension.toLowerCase()}`,
+    // The bucket keys keep the uploaded extension's case ("JPG" ≠ "jpg").
+    downloadUrl: `${INAT_BUCKET}/photos/${p.photoId}/large.${p.extension}`,
     credit: {
       title: `inaturalist-photo-${p.photoId}`,
       pageUrl: `https://www.inaturalist.org/photos/${p.photoId}`,
