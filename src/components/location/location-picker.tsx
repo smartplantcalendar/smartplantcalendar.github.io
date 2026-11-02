@@ -90,7 +90,11 @@ export function LocationPicker({
 }) {
   const { location, setLocation, mode } = useAppData();
   const [step, setStep] = useState<Step>(location && !startInEdit ? "saved" : "start");
-  const [justSaved, setJustSaved] = useState(false);
+  /** Set only after a real save: everywhere, or this device only (account failed). */
+  const [justSaved, setJustSaved] = useState<null | { deviceOnly: boolean; accountError?: string }>(null);
+  /** A save/delete that failed, kept so the farmer can retry it. */
+  const [saveFailure, setSaveFailure] = useState<{ error: string; location: SavedLocation } | null>(null);
+  const [deleteError, setDeleteError] = useState<string | null>(null);
   const [consent, setConsent] = useState<boolean>(location?.externalConsent ?? false);
   const [draft, setDraft] = useState<LocationDraft | null>(null);
   const [gpsFix, setGpsFix] = useState<GpsFix | null>(null);
@@ -239,25 +243,76 @@ export function LocationPicker({
       elevationM,
       externalConsent: consent,
     });
+    await persist(saved);
+  }
+
+  /** Saves and shows success only when the location is really stored. */
+  async function persist(saved: SavedLocation) {
     setSaving(true);
     const res = await setLocation(saved);
     setSaving(false);
-    if (!res.ok) toast.error(`حُفظ الموقع على هذا الجهاز فقط: ${res.error}`);
-    setJustSaved(true);
+    if (!res.ok) {
+      setSaveFailure({ error: res.error, location: saved });
+      return;
+    }
+    setSaveFailure(null);
+    setDeleteError(null);
+    setJustSaved({ deviceOnly: res.data.savedToAccount === false, accountError: res.data.accountError });
     setStep("saved");
     onConfirmed?.(saved);
+  }
+
+  async function removeSaved() {
+    const res = await setLocation(null);
+    if (!res.ok) {
+      setDeleteError(res.error);
+      toast.error(res.error);
+      return;
+    }
+    setDeleteError(null);
+    setJustSaved(null);
+    setDraft(null);
+    setName(null);
+    setStep("start");
+    toast.success("تم حذف الموقع المحفوظ");
   }
 
   const knownLabel = labelOf(name);
 
   return (
     <div ref={rootRef} className={cn("flex flex-col gap-5", className)}>
+      {saveFailure && step !== "saved" ? (
+        <Alert tone="danger" title="لم يُحفظ الموقع">
+          <span className="block" data-testid="location-save-error">{saveFailure.error}</span>
+          <Button size="lg" className="mt-3" disabled={saving} onClick={() => persist(saveFailure.location)}>
+            {saving ? <Spinner /> : <RotateCcw />} حاول مرة أخرى
+          </Button>
+        </Alert>
+      ) : null}
+      {deleteError ? (
+        <Alert tone="danger" title="لم يُحذف الموقع">
+          <span className="block" data-testid="location-delete-error">{deleteError}</span>
+          <Button size="lg" variant="outline" className="mt-3" onClick={removeSaved}>
+            <RotateCcw /> حاول مرة أخرى
+          </Button>
+        </Alert>
+      ) : null}
       {step === "saved" && location ? (
         <section key="saved" aria-labelledby="loc-saved" className="loc-step flex flex-col gap-4 rounded-3xl border border-border bg-surface p-5 shadow-xs sm:p-7">
-          {justSaved ? (
+          {justSaved && !justSaved.deviceOnly ? (
             <p role="status" className="flex items-center gap-2 text-lg font-extrabold text-brand-700">
               <CircleCheck className="size-6" aria-hidden /> تم حفظ موقع أرضك بنجاح
             </p>
+          ) : null}
+          {justSaved?.deviceOnly ? (
+            <Alert tone="warning" title="حُفظ موقع أرضك على هذا الجهاز فقط">
+              <span className="block" data-testid="location-device-only">
+                لم نتمكن من حفظه في حسابك{justSaved.accountError ? ` (${justSaved.accountError})` : ""}. سيبقى على هذا الجهاز، ولن يظهر على أجهزتك الأخرى حتى ينجح الحفظ في الحساب.
+              </span>
+              <Button size="lg" variant="outline" className="mt-3" disabled={saving} onClick={() => persist(location)}>
+                {saving ? <Spinner /> : <RotateCcw />} أعد المحاولة للحفظ في حسابك
+              </Button>
+            </Alert>
           ) : null}
           <div>
             <h2 id="loc-saved" className="text-sm font-bold text-muted-foreground">أرضك في</h2>
@@ -280,7 +335,7 @@ export function LocationPicker({
               size="lg"
               className={BIG}
               onClick={() => {
-                setJustSaved(false);
+                setJustSaved(null);
                 setStep("start");
               }}
             >
@@ -560,13 +615,7 @@ export function LocationPicker({
           onPickMap={pickOnMap}
           onUseMapPoint={() => (draft ? (consent ? lookupName(draft) : setStep("consent")) : undefined)}
           hasSaved={Boolean(location)}
-          onDelete={async () => {
-            await setLocation(null);
-            resetFor({ latitude: 0, longitude: 0, source: "gps", accuracyM: null });
-            setDraft(null);
-            setStep("start");
-            toast.success("تم حذف الموقع المحفوظ");
-          }}
+          onDelete={removeSaved}
           storageHint={mode === "remote" ? "يُحفظ موقعك في حسابك." : "يُحفظ موقعك في هذا المتصفح فقط."}
         />
       ) : null}

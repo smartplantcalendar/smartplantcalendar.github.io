@@ -237,6 +237,64 @@ test.describe("location: farmer flow", () => {
   });
 });
 
+/** Makes the browser refuse to store/remove the location until the flags are cleared. */
+async function breakLocationStorage(page: Page, fail: { set: boolean; remove: boolean }) {
+  await page.addInitScript((f) => {
+    (window as unknown as { __failLocation: typeof f }).__failLocation = f;
+    const key = "smartplant:location:v1";
+    const set = Storage.prototype.setItem;
+    const remove = Storage.prototype.removeItem;
+    Storage.prototype.setItem = function (k: string, v: string) {
+      if (k === key && (window as unknown as { __failLocation: typeof f }).__failLocation.set) throw new DOMException("full", "QuotaExceededError");
+      return set.call(this, k, v);
+    };
+    Storage.prototype.removeItem = function (k: string) {
+      if (k === key && (window as unknown as { __failLocation: typeof f }).__failLocation.remove) throw new DOMException("denied", "SecurityError");
+      return remove.call(this, k);
+    };
+  }, fail);
+}
+
+test.describe("location: saving failures", () => {
+  test("no success message unless the location is really saved; retry works", async ({ page }) => {
+    await breakLocationStorage(page, { set: true, remove: false });
+    await go(page, "/location/");
+    await page.locator("summary", { hasText: "خيارات متقدمة" }).click();
+    await page.getByLabel("المدينة").selectOption("ps-hebron");
+    await page.getByRole("button", { name: "نعم، احفظ الموقع" }).click();
+    await expect(page.getByText("لم يُحفظ الموقع")).toBeVisible();
+    await expect(page.getByTestId("location-save-error")).toContainText("تعذّر حفظ الموقع في هذا المتصفح");
+    await expect(page.getByText("تم حفظ موقع أرضك بنجاح")).toHaveCount(0);
+    expect(await savedInStorage(page)).toBeNull();
+    // The rest of the app still has no location.
+    await expect(page.getByRole("button", { name: "نعم، احفظ الموقع" })).toBeVisible();
+
+    await page.evaluate(() => ((window as unknown as { __failLocation: { set: boolean } }).__failLocation.set = false));
+    await page.getByRole("button", { name: "حاول مرة أخرى" }).click();
+    await expect(page.getByText("تم حفظ موقع أرضك بنجاح")).toBeVisible();
+    await expect(page.getByText("لم يُحفظ الموقع")).toHaveCount(0);
+    expect(await savedInStorage(page)).toMatchObject({ label: "الخليل", source: "list" });
+  });
+
+  test("a failed delete keeps the location and can be retried", async ({ page }) => {
+    await seedLocation(page, { latitude: 31.5326, longitude: 35.0998, label: "الخليل", regionId: "ps-hebron", zone: "highland" });
+    await breakLocationStorage(page, { set: false, remove: true });
+    await go(page, "/location/");
+    await page.getByRole("button", { name: "تغيير" }).click();
+    await page.locator("summary", { hasText: "خيارات متقدمة" }).click();
+    await page.getByRole("button", { name: "حذف الموقع المحفوظ" }).click();
+    await expect(page.getByText("لم يُحذف الموقع")).toBeVisible();
+    await expect(page.getByTestId("location-delete-error")).toContainText("تعذّر حذف الموقع من هذا المتصفح");
+    expect(await savedInStorage(page)).toMatchObject({ label: "الخليل" });
+
+    await page.evaluate(() => ((window as unknown as { __failLocation: { remove: boolean } }).__failLocation.remove = false));
+    await page.getByRole("button", { name: "حاول مرة أخرى" }).click();
+    await expect(page.getByText("تم حذف الموقع المحفوظ")).toBeVisible();
+    await expect(page.getByText("لم يُحذف الموقع")).toHaveCount(0);
+    expect(await savedInStorage(page)).toBeNull();
+  });
+});
+
 test.describe("what to plant now", () => {
   const hebron = { latitude: 31.5326, longitude: 35.0998, label: "الخليل", regionId: "ps-hebron", zone: "highland" as const };
   const jericho = { latitude: 31.8667, longitude: 35.45, label: "أريحا والأغوار", regionId: "ps-jericho", zone: "jordan_valley" as const };
