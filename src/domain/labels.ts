@@ -118,7 +118,7 @@ export const METHOD_LABELS: Record<PlantingMethod, string> = {
   cuttings: "زراعة العُقَل في الأرض",
   saplings: "غرس الغرسة الجاهزة في الأرض",
   nursery_sowing: "بذر البذور في المشتل لتجهيز الأشتال",
-  offshoots: "زراعة الفسائل في الأرض",
+  offshoots: "زراعة الفسيلة الجاهزة المتجذرة في الأرض",
   bulbs: "زراعة الأبصال في الأرض",
 };
 
@@ -131,7 +131,7 @@ export const METHOD_SHORT_LABELS: Record<PlantingMethod, string> = {
   cuttings: "زراعة العُقَل",
   saplings: "الغرس",
   nursery_sowing: "البذر في المشتل",
-  offshoots: "زراعة الفسائل",
+  offshoots: "زراعة الفسائل المتجذرة",
   bulbs: "زراعة الأبصال",
 };
 

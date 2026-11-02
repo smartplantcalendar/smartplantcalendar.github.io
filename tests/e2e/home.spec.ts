@@ -255,6 +255,31 @@ test.describe("expanded crop catalogue", () => {
     await expect(page.getByTestId("planting-status")).toHaveAttribute("data-status", "no_data");
   });
 
+  test("trees default to a ready sapling; cuttings and offshoot propagation stay secondary", async ({ page }) => {
+    await page.clock.setFixedTime(new Date("2026-02-10T09:00:00+03:00"));
+    await seedLocation(page, HEBRON);
+    for (const [slug, name] of [["fig", "التين"], ["pomegranate", "الرمان"], ["mulberry", "التوت"]]) {
+      await go(page, `/crops/${slug}/`);
+      await expect(page.getByTestId("planting-title")).toHaveText(`موعد غرس شجرة ${name}`);
+      await expect(page.getByTestId("fact-methods")).toContainText("غرس الغرسة الجاهزة في الأرض");
+      await expect(page.getByTestId("fact-methods")).not.toContainText("العُقَل");
+      // The sapling date is not documented: it stays unknown, never borrowed from cuttings.
+      await expect(page.getByTestId("planting-status")).toHaveAttribute("data-status", "no_data");
+      await page.getByText("لمن يريد إكثار الغرسة بنفسه").click();
+      await expect(page.getByTestId("cuttings-note")).toContainText("ليس موعد غرس الشجرة الجاهزة");
+    }
+    // Sage: a ready seedling by default; cuttings are a way to make your own.
+    await go(page, "/crops/sage/");
+    await expect(page.getByTestId("fact-methods")).toHaveText(/زراعة الأشتال الجاهزة في الأرض/);
+    await expect(page.getByTestId("fact-methods")).not.toContainText("العُقَل");
+    // Date palm: a ready rooted offshoot, distinct from separating and rooting offshoots.
+    await go(page, "/crops/date-palm/");
+    await expect(page.getByTestId("planting-title")).toHaveText("موعد زراعة فسائل النخيل المتجذرة");
+    await expect(page.getByTestId("fact-methods")).toContainText("زراعة الفسيلة الجاهزة المتجذرة في الأرض");
+    await page.getByText("لمن يريد إكثار الفسائل بنفسه").click();
+    await expect(page.getByTestId("offshoot-note")).toContainText("فصل الفسائل عن النبتة الأم وتجذيرها فهو إكثار");
+  });
+
   test("the planner asks for the date of planting in the ground", async ({ page }) => {
     await seedLocation(page, HEBRON);
     await go(page, "/planner/?crop=tomato");

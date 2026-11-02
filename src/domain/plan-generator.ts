@@ -7,7 +7,7 @@
 import { addDays, monthOf } from "@/lib/dates";
 import { formatShortDate } from "@/lib/format";
 import { CONTAINER_SPACES, GREENHOUSE_NOTICE, SPACES_WITHOUT_RULES, SPACE_TYPE_LABELS } from "./labels";
-import { evaluateWindowFit, isGeneralOnly, mainWindowsForZone, primaryMethod, windowsForZone, type WindowFit } from "./planting-windows";
+import { evaluateWindowFit, isGeneralOnly, mainWindowsForZone, primaryMethod, type WindowFit } from "./planting-windows";
 import type { ClimateZone, Crop, ISODate, PlantingMethod, SpaceType, TaskTemplate, TaskType } from "./types";
 
 export interface PlanInput {
@@ -169,7 +169,7 @@ export function generatePlan(input: PlanInput): GeneratedPlan {
   }
 
   const windowFit = evaluateWindowFit(crop, zone, monthOf(plantedOn), input.country);
-  if (isGeneralOnly(windowsForZone(crop, zone, input.country))) {
+  if (isGeneralOnly(mainWindowsForZone(crop, zone, input.country))) {
     warnings.push("مواعيد هذا المحصول عامة على مستوى البلد وليست خاصة بمنطقتك المناخية؛ تأكد من الإرشاد الزراعي المحلي.");
   }
   if (windowFit === "outside_window") {

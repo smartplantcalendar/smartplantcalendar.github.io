@@ -44,7 +44,7 @@ import {
 } from "@/domain/labels";
 import { generatePlan } from "@/domain/plan-generator";
 import { countryOfLocation } from "@/domain/location";
-import { windowsForZone } from "@/domain/planting-windows";
+import { mainWindowsForZone } from "@/domain/planting-windows";
 import { isValidISODate, monthOf } from "@/lib/dates";
 import { formatDate, formatMonthRange, formatNumber, monthName } from "@/lib/format";
 import { CLIMATE_ZONES, SPACE_TYPES, type ClimateZone, type Crop, type SpaceType, type TaskType } from "@/domain/types";
@@ -359,7 +359,7 @@ function PlannerWizardInner({ crops, zoneOverrides = {} }: { crops: Crop[]; zone
               {visibleCrops.map((c) => {
                 const active = selected.includes(c.slug);
                 const thisMonth = monthOf(app.today);
-                const ws = windowsForZone(c, zone, country);
+                const ws = mainWindowsForZone(c, zone, country);
                 const suitable = space ? c.spaceTypes.length === 0 || c.spaceTypes.includes(space) : true;
                 const nowOk = ws.some((w) => (w.startMonth <= w.endMonth ? thisMonth >= w.startMonth && thisMonth <= w.endMonth : thisMonth >= w.startMonth || thisMonth <= w.endMonth));
                 return (
@@ -429,7 +429,7 @@ function PlannerWizardInner({ crops, zoneOverrides = {} }: { crops: Crop[]; zone
               <ul className="flex flex-col gap-2">
                 {selectedCrops.map((c) => {
                   const fit = plans.find((p) => p.crop.slug === c.slug)?.plan.windowFit;
-                  const ws = windowsForZone(c, zone, country);
+                  const ws = mainWindowsForZone(c, zone, country);
                   return (
                     <li key={c.slug} className={cn("rounded-xl border p-3 text-sm", fit === "in_window" ? "border-success/20 bg-success-soft" : "border-warning-border bg-warning-soft")}>
                       <span className="font-bold">{c.name}: </span>

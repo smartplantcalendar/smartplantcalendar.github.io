@@ -19,7 +19,7 @@
 import { addMonths, daysInMonth, diffDays, parseISODate, toISODate } from "@/lib/dates";
 import { formatDays, formatMonthRange, monthName } from "@/lib/format";
 import { CLIMATE_ZONE_LABELS, COUNTRY_LABELS, GREENHOUSE_NOTICE, METHOD_LABELS, SPACES_WITHOUT_RULES, SPACE_TYPE_LABELS } from "./labels";
-import { isGeneralOnly, monthInWindow, windowsForZone } from "./planting-windows";
+import { isGeneralOnly, mainWindowsForZone, monthInWindow, propagationMethods, windowsForZone } from "./planting-windows";
 import type { ClimateZone, Crop, ISODate, PlantingMethod, PlantingWindow, SpaceType } from "./types";
 import type { WeatherAlert } from "./weather";
 
@@ -105,7 +105,13 @@ export function recommendCrop(crop: Crop, input: RecommendationInput): Recommend
   const group = input.methodGroup ?? "all";
   const month = parseISODate(today).month;
   const zoneLabel = CLIMATE_ZONE_LABELS[zone];
-  const windows = windowsForZone(crop, zone, input.country).filter((w) => methodAllowed(w.method, group));
+  // "All methods" means the farmer's default (ready material in the ground); a
+  // method filter never picks secondary propagation (cuttings of a fig tree).
+  const secondary = propagationMethods(crop);
+  const windows =
+    group === "all"
+      ? mainWindowsForZone(crop, zone, input.country)
+      : windowsForZone(crop, zone, input.country).filter((w) => methodAllowed(w.method, group) && !secondary.includes(w.method));
   const general = isGeneralOnly(windows);
   const countryName = COUNTRY_LABELS[windows[0]?.countryCode ?? ""] ?? "المنطقة";
   const where = general ? `عمومًا في ${countryName} (موعد عام غير خاص بمنطقتك)` : `لمنطقتك (${zoneLabel})`;

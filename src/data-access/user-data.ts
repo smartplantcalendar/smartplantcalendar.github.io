@@ -13,7 +13,7 @@
 import { z } from "zod";
 import { findRegion, REGIONS } from "@/data/regions";
 import { countryFromCoordinates } from "@/domain/geo";
-import { windowsForZone } from "@/domain/planting-windows";
+import { mainWindowsForZone, primaryMethod } from "@/domain/planting-windows";
 
 /** Country for a plan: from the garden's coordinates (null near borders), else from the chosen town. */
 function planCountry(input: { regionId: string | null; latitude: number | null; longitude: number | null }): string | null {
@@ -108,7 +108,7 @@ export async function createPlanAction(raw: unknown): Promise<ActionResult<{ pla
   const crop = mapCropRow(cropRow as CropRow);
 
   const plan = generatePlan({ crop, plantedOn: input.plantedOn, zone: input.zone, spaceType: input.spaceType, country: planCountry(input) });
-  const method = windowsForZone(crop, input.zone, planCountry(input))[0]?.method ?? crop.windows[0]?.method ?? null;
+  const method = mainWindowsForZone(crop, input.zone, planCountry(input))[0]?.method ?? primaryMethod(crop);
 
   if (input.gardenId && !uuidSchema.safeParse(input.gardenId).success) {
     return { ok: false, error: "المساحة الزراعية غير صالحة." };

@@ -8,7 +8,7 @@ import { PlantingStatus } from "@/components/crops/planting-status";
 import { findSource, sourcesForCrop } from "@/data/crop-sources";
 import { otherMeanings } from "@/domain/ambiguous-names";
 import { isPlannable } from "@/domain/crop-search";
-import { fieldMethods, isFieldWindow, plantingTitle, primaryMethod } from "@/domain/planting-windows";
+import { fieldMethods, isFieldWindow, plantingTitle, primaryMethod, propagationMethods } from "@/domain/planting-windows";
 import { PlantingWindowsTable } from "@/components/crops/planting-windows-table";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -66,9 +66,17 @@ export default async function CropDetailPage({ params }: { params: Promise<{ slu
   const primary = primaryMethod(crop);
   const title = plantingTitle(crop, primary);
   const methods = fieldMethods(crop);
-  const fieldWindows = crop.windows.filter(isFieldWindow);
+  // Secondary propagation (cuttings next to a ready plant, nursery sowing) is
+  // producing the plant yourself: never shown as the planting date.
+  const secondary = propagationMethods(crop);
+  const fieldWindows = crop.windows.filter((w) => isFieldWindow(w) && !secondary.includes(w.method));
   const nurseryWindows = crop.windows.filter((w) => !isFieldWindow(w));
-  const usesSeedlings = methods.includes("transplanting") || nurseryWindows.length > 0 || (crop.propagation ?? []).includes("nursery_sowing");
+  const cuttingWindows = crop.windows.filter((w) => w.method === "cuttings" && secondary.includes("cuttings"));
+  const secondaryCuttings = secondary.includes("cuttings");
+  const usesSeedlings = methods.includes("transplanting") || nurseryWindows.length > 0 || secondary.includes("nursery_sowing");
+  // Which "do it yourself" section the crop gets, if any.
+  const selfKind: "seedlings" | "saplings" | "offshoots" | null =
+    primary === "offshoots" ? "offshoots" : primary === "saplings" && secondaryCuttings ? "saplings" : usesSeedlings || secondaryCuttings ? "seedlings" : null;
   const perennial = crop.lifeCycle === "perennial";
   // Planting, flowering, harvest and first yield are separate facts.
   const harvestValue =
@@ -76,7 +84,7 @@ export default async function CropDetailPage({ params }: { params: Promise<{ slu
       ? `أول حصاد أو قطاف بعد نحو ${formatNumber(crop.growthDaysMin)}–${formatNumber(crop.growthDaysMax)} يومًا من الزراعة في الأرض`
       : (crop.harvestNote ?? notDocumented);
   const facts: { icon: typeof Sun; label: string; value: string; note?: string; testId?: string }[] = [
-    { icon: Sprout, label: "طرق الزراعة في الأرض", value: methods.length ? methods.map((m) => METHOD_LABELS[m]).join("، ") : notDocumented },
+    { icon: Sprout, label: "طرق الزراعة في الأرض", value: methods.length ? methods.map((m) => METHOD_LABELS[m]).join("، ") : notDocumented, testId: "fact-methods" },
     { icon: Sun, label: "الشمس", value: crop.sun ? SUN_LABELS[crop.sun] : notDocumented },
     { icon: Droplets, label: "الري", value: crop.wateringSummary || (crop.water ? `احتياج ${WATER_LABELS[crop.water]}` : notDocumented) },
     { icon: Flower2, label: "موعد الإزهار", value: crop.floweringNote ?? notDocumented, testId: "fact-flowering" },
@@ -211,16 +219,46 @@ export default async function CropDetailPage({ params }: { params: Promise<{ slu
               </div>
             )}
 
-            {usesSeedlings ? (
-              <details className="mt-6 rounded-xl border border-border bg-surface-muted p-4" data-testid="nursery-section">
-                <summary className="cursor-pointer font-bold">لمن يريد تجهيز الأشتال بنفسه</summary>
+            {selfKind ? (
+              <details
+                className="mt-6 rounded-xl border border-border bg-surface-muted p-4"
+                data-testid={selfKind === "seedlings" ? "nursery-section" : "propagation-section"}
+              >
+                <summary className="cursor-pointer font-bold">
+                  {selfKind === "seedlings" ? "لمن يريد تجهيز الأشتال بنفسه" : selfKind === "saplings" ? "لمن يريد إكثار الغرسة بنفسه" : "لمن يريد إكثار الفسائل بنفسه"}
+                </summary>
                 <div className="mt-3 flex flex-col gap-3 text-sm leading-7 text-muted-foreground">
-                  <p>بذر البذور في المشتل يسبق الزراعة في الأرض بأسابيع، وليس موعد الزراعة المعروض أعلاه. لا نستعمله في «ماذا أزرع الآن؟» ولا في الخطط.</p>
-                  {nurseryWindows.length ? (
-                    <PlantingWindowsTable windows={nurseryWindows} caption={`موعد بذر ${crop.name} في المشتل`} />
-                  ) : (
-                    <p data-testid="nursery-unknown">لا تتوفر لدينا مواعيد موثّقة لبذر {crop.name} في المشتل، ولن نحسبها من موعد الزراعة في الأرض.</p>
-                  )}
+                  {selfKind === "offshoots" ? (
+                    <p data-testid="offshoot-note">
+                      الموعد المقصود أعلاه هو زراعة فسيلة جاهزة متجذرة في الأرض. أما فصل الفسائل عن النبتة الأم وتجذيرها فهو إكثار، وموعده ليس موعد زراعة الفسيلة الجاهزة، ولا نحسب أحدهما من الآخر.
+                    </p>
+                  ) : null}
+                  {selfKind === "saplings" ? (
+                    <p data-testid="cuttings-note">
+                      الطريقة الافتراضية هي شراء غرسة جاهزة وغرسها في الأرض. أخذ العُقَل وتجذيرها طريقة لإنتاج الغرسة بنفسك، وموعدها ليس موعد غرس الشجرة الجاهزة، ولا نستعمله في «ماذا أزرع الآن؟» ولا في الخطط.
+                    </p>
+                  ) : null}
+                  {selfKind === "seedlings" && usesSeedlings ? (
+                    <p>بذر البذور في المشتل يسبق الزراعة في الأرض بأسابيع، وليس موعد الزراعة المعروض أعلاه. لا نستعمله في «ماذا أزرع الآن؟» ولا في الخطط.</p>
+                  ) : null}
+                  {selfKind === "seedlings" && secondaryCuttings ? (
+                    <p data-testid="cuttings-note">يمكن أيضًا إنتاج الأشتال من العُقَل، وموعد أخذ العُقَل وتجذيرها ليس موعد زراعة الشتلة الجاهزة في الأرض.</p>
+                  ) : null}
+                  {secondaryCuttings ? (
+                    cuttingWindows.length ? (
+                      <PlantingWindowsTable windows={cuttingWindows} caption={`موعد أخذ عُقَل ${crop.name} وتجذيرها`} />
+                    ) : (
+                      <p data-testid="cuttings-unknown">لا تتوفر لدينا مواعيد موثّقة لأخذ عُقَل {crop.name} وتجذيرها.</p>
+                    )
+                  ) : null}
+                  {usesSeedlings ? (
+                    nurseryWindows.length ? (
+                      <PlantingWindowsTable windows={nurseryWindows} caption={`موعد بذر ${crop.name} في المشتل`} />
+                    ) : (
+                      <p data-testid="nursery-unknown">لا تتوفر لدينا مواعيد موثّقة لبذر {crop.name} في المشتل، ولن نحسبها من موعد الزراعة في الأرض.</p>
+                    )
+                  ) : null}
+                  {selfKind === "offshoots" ? <p data-testid="offshoot-unknown">لا تتوفر لدينا مواعيد موثّقة لفصل فسائل {crop.name} وتجذيرها.</p> : null}
                 </div>
               </details>
             ) : null}

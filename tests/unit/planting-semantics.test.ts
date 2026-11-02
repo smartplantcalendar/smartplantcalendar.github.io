@@ -1,5 +1,7 @@
 import { describe, expect, it } from "vitest";
+import { CATALOGUE_CROPS } from "@/data/crop-catalogue";
 import { SEED_CROPS } from "@/data/crops";
+import { METHOD_LABELS, METHOD_SHORT_LABELS } from "@/domain/labels";
 import { generatePlan } from "@/domain/plan-generator";
 import {
   describeSimpleStatus,
@@ -9,6 +11,7 @@ import {
   nurseryWindowsForZone,
   plantingTitle,
   primaryMethod,
+  propagationMethods,
   simplePlantingStatus,
   windowsForZone,
 } from "@/domain/planting-windows";
@@ -102,6 +105,87 @@ describe("the main date means planting in the final place", () => {
     expect(primaryMethod(crop("cabbage"))).toBe("transplanting"); // propagation lists nursery sowing first
     expect(fieldMethods(crop("basil"))).not.toContain("nursery_sowing");
     expect(primaryMethod(crop("zucchini"))).toBe("direct_sowing");
-    expect(fieldMethods(crop("rose"))).toEqual(["saplings", "cuttings"]);
+    // Cuttings next to a ready plant are secondary propagation, not a planting method.
+    expect(fieldMethods(crop("rose"))).toEqual(["saplings"]);
+    expect(propagationMethods(crop("rose"))).toEqual(["cuttings"]);
+  });
+});
+
+const catalogue = (slug: string) => CATALOGUE_CROPS.find((c) => c.slug === slug)!;
+
+/** A copy of the crop with one extra window of the given method (e.g. cuttings opening now). */
+function withWindow(c: Crop, method: Crop["windows"][number]["method"], startMonth: number, endMonth: number): Crop {
+  return { ...c, windows: [...c.windows, { zone: "highland", startMonth, endMonth, method }] };
+}
+
+describe("buying a ready plant is the default; producing it yourself is secondary", () => {
+  it.each(["fig", "pomegranate", "mulberry", "quince", "sumac"])("%s: a ready sapling planted in the ground, cuttings secondary", (slug) => {
+    const tree = catalogue(slug);
+    expect(primaryMethod(tree)).toBe("saplings");
+    expect(fieldMethods(tree)).toEqual(["saplings"]);
+    expect(propagationMethods(tree)).toContain("cuttings");
+    // Order in the data must not matter: cuttings listed first still lose to a ready sapling.
+    const reordered = { ...tree, propagation: ["cuttings", "saplings"] as Crop["propagation"] };
+    expect(primaryMethod(reordered)).toBe("saplings");
+  });
+
+  it("fig: the title is planting a ready tree and an unknown date stays unknown", () => {
+    const fig = catalogue("fig");
+    expect(plantingTitle(fig, primaryMethod(fig))).toBe("موعد غرس شجرة التين");
+    expect(simplePlantingStatus(fig, "highland", "2026-02-10").kind).toBe("no_data");
+    // Even with a documented cuttings window open now, the sapling date stays unknown.
+    const withCuttings = withWindow(fig, "cuttings", 1, 3);
+    expect(primaryMethod(withCuttings)).toBe("saplings");
+    expect(mainWindowsForZone(withCuttings, "highland")).toEqual([]);
+    expect(simplePlantingStatus(withCuttings, "highland", "2026-02-10").kind).toBe("no_data");
+    const plan = generatePlan({ crop: withCuttings, plantedOn: "2026-02-10", zone: "highland", spaceType: "home_garden" });
+    expect(plan.windowFit).toBe("no_data");
+  });
+
+  it("recommendations never use cuttings dates for a tree, whatever the method filter", () => {
+    const fig = withWindow(catalogue("fig"), "cuttings", 1, 3);
+    for (const methodGroup of ["all", "seedlings"] as const) {
+      const rec = recommendCrops({ crops: [fig], today: "2026-02-10", zone: "highland", spaceType: "home_garden", methodGroup });
+      expect(rec.groups.now, methodGroup).toHaveLength(0);
+      expect(rec.groups.no_data.map((r) => r.crop.slug), methodGroup).toEqual(["fig"]);
+    }
+  });
+
+  it("olive keeps its sapling dates when a cuttings window is added", () => {
+    const olive = withWindow(crop("olive"), "cuttings", 6, 7);
+    expect(primaryMethod(olive)).toBe("saplings");
+    expect(mainWindowsForZone(olive, "highland").every((w) => w.method === "saplings")).toBe(true);
+    expect(simplePlantingStatus(olive, "highland", "2026-06-15").kind).not.toBe("now");
+  });
+
+  it.each(["sage", "rosemary", "lemon-verbena", "marjoram", "lavender"])("%s: a ready seedling by default, cuttings secondary", (slug) => {
+    const herb = catalogue(slug);
+    expect(primaryMethod(herb)).toBe("transplanting");
+    expect(propagationMethods(herb)).toEqual(["cuttings"]);
+  });
+
+  it("crops grown from cuttings in the ground keep cuttings as their method", () => {
+    // No ready sapling or seedling option: the cutting itself is planted in place.
+    expect(primaryMethod(catalogue("prickly-pear"))).toBe("cuttings");
+    expect(primaryMethod(catalogue("sweet-potato"))).toBe("cuttings");
+    expect(primaryMethod(crop("mint"))).toBe("cuttings");
+  });
+
+  it("date palm: a ready rooted offshoot, distinct from propagating offshoots", () => {
+    const palm = catalogue("date-palm");
+    expect(primaryMethod(palm)).toBe("offshoots");
+    expect(METHOD_LABELS.offshoots).toBe("زراعة الفسيلة الجاهزة المتجذرة في الأرض");
+    expect(METHOD_SHORT_LABELS.offshoots).toBe("زراعة الفسائل المتجذرة");
+    expect(plantingTitle(palm, "offshoots")).toBe("موعد زراعة فسائل النخيل المتجذرة");
+    expect(simplePlantingStatus(palm, "highland", "2026-03-10").kind).toBe("no_data");
+  });
+
+  it("the default method never changes a recorded date", () => {
+    for (const c of SEED_CROPS) {
+      const main = mainWindowsForZone(c, "highland");
+      const all = windowsForZone(c, "highland");
+      // Every crop's recorded windows use one method, so the main windows are all of them.
+      expect(main, c.slug).toEqual(all);
+    }
   });
 });
