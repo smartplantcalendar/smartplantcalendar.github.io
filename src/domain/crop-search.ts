@@ -165,6 +165,6 @@ export function listCrop(crop: Crop): Crop {
     guide: [],
     // Flowering/harvest seasons are only shown on the crop page.
     phases: [],
-    estimate: crop.estimate ? { ...crop.estimate, note: "", contextUrls: [] } : crop.estimate,
+    estimate: crop.estimate ? { ...crop.estimate, note: "", contextUrls: [], reviewNotes: [] } : crop.estimate,
   };
 }

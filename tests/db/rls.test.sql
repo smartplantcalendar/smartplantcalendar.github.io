@@ -51,6 +51,7 @@ begin
     raise exception 'a not-recommended zone must not get a planting window';
   end if;
   if (select count(*) from public.crop_zone_estimates) <> 440 then raise exception 'expected 440 zone estimates'; end if;
+  if cardinality((select estimate_review_notes from public.crops where slug = 'carob')) = 0 then raise exception 'carob review note missing'; end if;
   if not exists (select 1 from public.crop_phase_windows p join public.crops c on c.id = p.crop_id where c.slug = 'fig' and p.kind = 'harvest' and p.zone = 'highland') then
     raise exception 'fig harvest season missing';
   end if;

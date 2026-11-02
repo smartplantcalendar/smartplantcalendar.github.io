@@ -11,8 +11,9 @@
 --  * crop_zone_estimates: open-field suitability per zone ('not_recommended'
 --    = «لا يُوصى / غير ملائم غالبًا», a restriction, not a date), irrigation
 --    system, days to the first harvest and years to the first yield.
---  * crops.estimate_*: dataset id, what "harvest" means, the caveat, and
---    general context links (not proof of each date).
+--  * crops.estimate_*: dataset id, what "harvest" means, the caveat,
+--    general context links (not proof of each date) and hand-written review
+--    notes that explain data which may look contradictory.
 -- Same RLS as the other crop tables: public read of published crops, admin write.
 
 alter table public.crops drop constraint if exists crops_data_status_check;
@@ -24,7 +25,9 @@ alter table public.crops
   add column if not exists estimate_harvest_meaning text check (char_length(estimate_harvest_meaning) <= 200),
   add column if not exists estimate_note text check (char_length(estimate_note) <= 1000),
   add column if not exists estimate_links text[] not null default '{}'
-    check (cardinality(estimate_links) <= 10);
+    check (cardinality(estimate_links) <= 10),
+  add column if not exists estimate_review_notes text[] not null default '{}'
+    check (cardinality(estimate_review_notes) <= 10);
 
 alter table public.crop_planting_windows
   add column if not exists confidence text not null default 'documented' check (confidence in ('documented','estimated')),

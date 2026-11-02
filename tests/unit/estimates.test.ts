@@ -181,6 +181,7 @@ describe("database rows", () => {
       estimate_harvest_meaning: c.estimate!.harvestMeaning,
       estimate_note: c.estimate!.note,
       estimate_links: c.estimate!.contextUrls,
+      estimate_review_notes: c.estimate!.reviewNotes,
       crop_planting_windows: c.windows.map((w, i) => ({ zone: w.zone, country_code: w.countryCode, start_month: w.startMonth, end_month: w.endMonth, method: w.method, note: w.note ?? null, confidence: "estimated", optional: Boolean(w.optional), sort_order: i })),
       crop_phase_windows: (c.phases ?? []).map((p, i) => ({ kind: p.kind, zone: p.zone, country_code: p.countryCode, start_month: p.startMonth, end_month: p.endMonth, optional: Boolean(p.optional), sort_order: i })),
       crop_zone_estimates: (c.zoneEstimates ?? []).map((z) => ({ zone: z.zone, country_code: z.countryCode, suitability: z.suitability, irrigation: z.irrigation, days_to_first_harvest: z.daysToFirstHarvest, years_to_first_yield: z.yearsToFirstYield, not_applicable: z.notApplicable })),

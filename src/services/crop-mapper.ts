@@ -32,6 +32,7 @@ export interface CropRow {
   estimate_harvest_meaning?: string | null;
   estimate_note?: string | null;
   estimate_links?: string[] | null;
+  estimate_review_notes?: string[] | null;
   is_published?: boolean;
   crop_planting_windows?: {
     zone: PlantingWindow["zone"];
@@ -149,6 +150,7 @@ export function mapCropRow(row: CropRow): Crop {
           harvestMeaning: row.estimate_harvest_meaning ?? null,
           note: row.estimate_note ?? "",
           contextUrls: row.estimate_links ?? [],
+          reviewNotes: row.estimate_review_notes ?? [],
         }
       : null,
     templates: [...(row.crop_task_templates ?? [])].sort(bySort).map((t) => ({

@@ -252,7 +252,9 @@ export default async function CropDetailPage({ params }: { params: Promise<{ slu
                 {crop.windows.some((w) => w.optional) ? (
                   <div className="flex flex-col gap-2">
                     <h3 className="font-bold">عروات إضافية اختيارية (تقدير منخفض الثقة)</h3>
-                    <p className="text-sm text-muted-foreground">لا ندخلها في «ماذا أزرع الآن؟» ولا في تقييم الخطط. جرّبها فقط مع خبرة محلية.</p>
+                    <p className="text-sm text-muted-foreground" data-testid="optional-seasons-note">
+                      هذه عروات اختيارية منخفضة الثقة تُضاف إلى الموعد الأساسي ولا تحلّ محله. لذلك لا ندخلها عمدًا في «ماذا أزرع الآن؟» ولا في تقييم الخطط. جرّبها فقط مع خبرة محلية.
+                    </p>
                     <OptionalSeasonsTable crop={crop} />
                   </div>
                 ) : null}
@@ -314,6 +316,17 @@ export default async function CropDetailPage({ params }: { params: Promise<{ slu
                 {crop.estimate?.harvestMeaning ? ` المقصود بالقطف هنا: ${crop.estimate.harvestMeaning}.` : ""}
               </p>
               <CropPhasesTable crop={crop} />
+              {crop.estimate?.reviewNotes?.length ? (
+                <div className="mt-4" data-testid="review-notes">
+                  <Alert tone="info" title="ملاحظات مراجعة على هذه التقديرات">
+                    <ul className="list-disc space-y-1 ps-5">
+                      {crop.estimate.reviewNotes.map((n) => (
+                        <li key={n}>{n}</li>
+                      ))}
+                    </ul>
+                  </Alert>
+                </div>
+              ) : null}
             </section>
           ) : null}
 

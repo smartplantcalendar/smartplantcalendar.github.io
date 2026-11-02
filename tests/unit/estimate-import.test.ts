@@ -3,6 +3,7 @@ import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import { parseCsv, type CsvTable } from "../../scripts/estimates/csv";
 import { EXTRA_COLUMNS, ZONE_COLUMNS, harvestConflict, importEstimates, type ImportResult } from "../../scripts/estimates/import-core";
+import { reviewNotesFor } from "../../scripts/estimates/review-notes";
 import { CATALOGUE_BASE } from "@/data/crop-catalogue";
 import { CROP_ESTIMATES, ESTIMATE_DATASET } from "@/data/crop-estimates";
 import { FIELD_METHODS } from "@/domain/types";
@@ -14,7 +15,8 @@ const EXTRA = read("smartplant_88_extra_seasons.csv");
 const empty = (t: CsvTable): CsvTable => ({ headers: t.headers, rows: [] });
 
 function run(over: Partial<{ main: CsvTable; regions: CsvTable; extra: CsvTable }> = {}): ImportResult {
-  return importEstimates({ main: MAIN, regions: REGIONS, extra: EXTRA, catalogue: CATALOGUE_BASE, dataset: "smartplant-88-ps", ...over });
+  const dataset = "smartplant-88-ps";
+  return importEstimates({ main: MAIN, regions: REGIONS, extra: EXTRA, catalogue: CATALOGUE_BASE, dataset, reviewNotes: (slug) => reviewNotesFor(dataset, slug), ...over });
 }
 const real = run();
 

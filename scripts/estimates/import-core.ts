@@ -189,6 +189,8 @@ export interface ImportInput {
   extra: CsvTable;
   catalogue: CatalogueCrop[];
   dataset: string;
+  /** Hand-written review notes for a crop (shown to farmers next to the data). */
+  reviewNotes?: (slug: string) => string[];
 }
 
 const monthIndex = new Map<string, number>(LEVANT_MONTHS.map((m, i) => [m, i + 1]));
@@ -462,6 +464,13 @@ export function importEstimates(input: ImportInput): ImportResult {
     } else if (harvest.kind === "na") notApplicable.push("harvest");
     else add({ ...at, level: "excluded", what: "موسم القطف", message: harvest.kind === "invalid" ? harvest.why : "قيمة «لا يُوصى» في عمود القطف" });
 
+    // A crop with a harvest season is harvested: when both the days and the
+    // years to the first harvest say «لا ينطبق», the time is UNKNOWN, not
+    // "not applicable" (e.g. akkoub, rose).
+    if (harvest.kind === "range" && notApplicable.includes("days") && notApplicable.includes("years")) {
+      notApplicable.splice(0, notApplicable.length, ...notApplicable.filter((f) => f !== "days" && f !== "years"));
+      add({ ...at, level: "warning", message: "له موسم قطف لكن المدة حتى أول قطف أو إنتاج «لا ينطبق»؛ عُرضت «غير معروفة» بدل «لا ينطبق»" });
+    }
     b.zones.push(zoneEstimate);
     b.zoneRanges.set(zone, { plant: plantRange, days: zoneEstimate.daysToFirstHarvest, suitability });
   }
@@ -564,7 +573,13 @@ export function importEstimates(input: ImportInput): ImportResult {
       windows: b.windows,
       phases: b.phases,
       zones: b.zones,
-      info: { dataset: input.dataset, harvestMeaning: b.harvestMeaning, note: b.note, contextUrls: [...b.links].sort() },
+      info: {
+        dataset: input.dataset,
+        harvestMeaning: b.harvestMeaning,
+        note: b.note,
+        contextUrls: [...b.links].sort(),
+        reviewNotes: input.reviewNotes?.(b.slug) ?? [],
+      },
     });
   }
   crops.sort((a, b) => a.slug.localeCompare(b.slug));

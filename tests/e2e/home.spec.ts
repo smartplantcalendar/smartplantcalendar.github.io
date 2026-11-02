@@ -151,6 +151,15 @@ test.describe("expanded crop catalogue", () => {
     // Estimated crops can be planned (the plan is labelled tentative).
     await expect(page.getByRole("link", { name: /أنشئ خطة زراعة/ })).toBeVisible();
 
+    await expect(page.getByTestId("optional-seasons-note")).toContainText("لا ندخلها عمدًا في «ماذا أزرع الآن؟»");
+
+    // Data that looks contradictory comes with its explanation.
+    await go(page, "/crops/carob/");
+    await expect(page.getByTestId("review-notes")).toContainText("تشابه موسمي الإزهار والقطف هنا ليس خطأ");
+    await go(page, "/crops/akkoub/");
+    await expect(page.getByTestId("phases-highland").getByTestId("phase-days")).toHaveText("غير معروف");
+    await expect(page.getByTestId("review-notes")).toContainText("يخص النباتات القائمة");
+
     // «غير ملائم غالبًا» is a restriction shown per zone, not a date.
     await go(page, "/crops/apple/");
     await expect(page.getByTestId("zone-not-recommended")).toHaveCount(3);

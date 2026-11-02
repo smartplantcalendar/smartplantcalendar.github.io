@@ -1,42 +1,55 @@
 /**
  * Agronomic review notes written by hand while checking an imported dataset:
- * observations the automatic rules cannot decide. They are printed in the
- * import report; they do not change any imported value.
+ * observations the automatic rules cannot decide. They never change an
+ * imported value; they are shown to the farmer on the crop page (so that data
+ * that looks contradictory comes with its explanation) and listed in the
+ * import report.
  */
 export interface ReviewNote {
-  slug: string;
+  slugs: string[];
   note: string;
 }
+
+const CITRUS = ["lemon", "orange", "mandarin", "grapefruit"];
 
 export const REVIEW_NOTES: Record<string, ReviewNote[]> = {
   "smartplant-88-ps": [
     {
-      slug: "carob",
-      note: "الإزهار والقطف «آب–تشرين الثاني» متطابقان. الخروب يزهر في الخريف وتنضج قرونه في صيف السنة التالية، فالقطف يخص إزهار الموسم السابق. القيم مقبولة لكن تحتاج توضيحًا للمزارع.",
+      slugs: ["carob"],
+      note: "يزهر الخروب في أواخر الصيف والخريف، وتحتاج قرونه قرابة سنة لتنضج؛ لذلك يتزامن قطف قرون السنة الماضية مع الإزهار الجديد. تشابه موسمي الإزهار والقطف هنا ليس خطأ.",
     },
     {
-      slug: "banana",
-      note: "الإزهار مسجّل «لا ينطبق» مع أن الموز يزهر قبل تكوّن السباطة. عُرض الإزهار «غير معروف» بدل «لا ينطبق».",
+      slugs: ["banana"],
+      note: "الموز يزهر قبل تكوّن السباطة، لكن موعد إزهاره غير مسجّل في هذا التقدير، فتركناه «غير معروف» بدل «لا ينطبق».",
     },
     {
-      slug: "sweet-potato",
-      note: "إزهار «تموز–أيلول» مسجّل، والبطاطا الحلوة قلّما تزهر في الزراعة الحقلية ولا يرتبط محصول الدرنات بالإزهار.",
+      slugs: ["sweet-potato"],
+      note: "البطاطا الحلوة قلّما تزهر في الحقل، ومحصول الدرنات لا يعتمد على الإزهار؛ موعد الإزهار المذكور تقريبي ولا يلزم انتظاره.",
     },
     {
-      slug: "akkoub",
-      note: "العكوب نبات بري معمّر يحتاج عادة سنتين أو أكثر من البذر حتى أول قطف؛ موسم القطف «آذار–أيار» يخص النباتات القائمة لا البذور المزروعة حديثًا.",
+      slugs: ["akkoub"],
+      note: "العكوب نبات بري معمّر يحتاج عادة أكثر من موسم من البذر حتى يصلح للقطف؛ موسم القطف (آذار–أيار) يخص النباتات القائمة، لا البذور المزروعة في الموسم نفسه. لذلك المدة حتى أول قطف «غير معروفة».",
     },
     {
-      slug: "lemon",
-      note: "غرس الحمضيات في السهول الداخلية «تشرين الأول–تشرين الثاني» بينما في الساحل «شباط–نيسان». الفرق كبير بين منطقتين متجاورتين ويحتاج تحققًا (ينطبق على البرتقال واليوسفي والجريب فروت).",
+      slugs: ["lemon"],
+      note: "الليمون يحمل ثمارًا في معظم أشهر السنة، لذلك يغطي موسم القطف السنة كلها تقريبًا.",
     },
     {
-      slug: "date-palm",
-      note: "زراعة فسائل النخيل في الأغوار «أيلول–تشرين الأول» بينما في الساحل والسهول ربيعية. الموعدان مستعملان محليًا، لكن الفرق يستحق مراجعة.",
+      slugs: CITRUS,
+      note: "موعد الغرس التقديري في السهول الداخلية (تشرين الأول–تشرين الثاني) يختلف كثيرًا عن الساحل (شباط–نيسان) مع أن المنطقتين متجاورتان؛ تحقق من الإرشاد المحلي قبل الغرس.",
     },
     {
-      slug: "watermelon",
-      note: "العروة الإضافية في الساحل (بذر في آب) موصوفة في الملف بأنها «عالية المخاطرة»؛ تظهر كعروة اختيارية فقط ولا تدخل في «ماذا أزرع الآن؟» (ينطبق على الشمام).",
+      slugs: ["date-palm"],
+      note: "زراعة الفسائل التقديرية في الأغوار في أيلول–تشرين الأول، وفي الساحل والسهول في الربيع؛ تحقق من الموعد محليًا.",
+    },
+    {
+      slugs: ["watermelon", "melon"],
+      note: "العروة الإضافية في الساحل (بذر في آب) عالية المخاطرة حسب ملف التقديرات؛ نعرضها كخيار فقط ولا ندخلها في «ماذا أزرع الآن؟».",
     },
   ],
 };
+
+/** The review notes of one crop in a dataset. */
+export function reviewNotesFor(dataset: string, slug: string): string[] {
+  return (REVIEW_NOTES[dataset] ?? []).filter((n) => n.slugs.includes(slug)).map((n) => n.note);
+}

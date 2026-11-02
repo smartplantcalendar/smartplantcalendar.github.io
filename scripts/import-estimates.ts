@@ -22,7 +22,7 @@ import { CATALOGUE_BASE } from "../src/data/crop-catalogue";
 import { CLIMATE_ZONE_LABELS } from "../src/domain/labels";
 import { parseCsv } from "./estimates/csv";
 import { importEstimates, type ImportIssue, type ImportResult } from "./estimates/import-core";
-import { REVIEW_NOTES } from "./estimates/review-notes";
+import { REVIEW_NOTES, reviewNotesFor } from "./estimates/review-notes";
 
 function arg(name: string, fallback: string): string {
   const i = process.argv.indexOf(`--${name}`);
@@ -47,6 +47,7 @@ const result = importEstimates({
   extra: read(paths.extra),
   catalogue: CATALOGUE_BASE,
   dataset,
+  reviewNotes: (slug) => reviewNotesFor(dataset, slug),
 });
 
 const errors = result.issues.filter((i) => i.level === "error");
@@ -119,7 +120,9 @@ function reportSource(r: ImportResult): string {
     "",
     "## مراجعة زراعية يدوية",
     "",
-    ...(REVIEW_NOTES[dataset] ?? []).map((n) => `- **${names.get(n.slug) ?? n.slug}**: ${n.note}`),
+    "تظهر هذه الملاحظات للمزارع في صفحة كل نبات، بجانب البيانات التي تشرحها.",
+    "",
+    ...(REVIEW_NOTES[dataset] ?? []).map((n) => `- **${n.slugs.map((s) => names.get(s) ?? s).join("، ")}**: ${n.note}`),
     "",
     "## كيف تُعرض هذه البيانات",
     "",
