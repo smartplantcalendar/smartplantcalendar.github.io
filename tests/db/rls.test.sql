@@ -19,6 +19,16 @@ begin
   if exists (select 1 from public.crop_planting_windows w join public.crops c on c.id = w.crop_id where c.slug = 'tomato' and w.country_code is not null) then
     raise exception 'existing general windows must stay unscoped';
   end if;
+  if not exists (select 1 from public.crops where slug = 'narcissus' and category = 'ornamental' and propagation = array['bulbs']::text[]) then
+    raise exception 'narcissus (bulbs, ornamental) missing';
+  end if;
+  if (select first_yield_note from public.crops where slug = 'olive') is null then raise exception 'olive first-yield note missing'; end if;
+  -- A nursery sowing date can never be the primary (planting) method.
+  begin
+    update public.crops set primary_method = 'nursery_sowing' where slug = 'tomato';
+    raise exception 'nursery sowing accepted as primary method';
+  exception when check_violation then null;
+  end;
   if (select data_status from public.crops where slug = 'eggplant') <> 'incomplete' then raise exception 'eggplant should stay incomplete'; end if;
   if exists (select 1 from public.crop_planting_windows w join public.crops c on c.id = w.crop_id where c.data_status = 'incomplete') then
     raise exception 'incomplete crops must not have windows';

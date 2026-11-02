@@ -14,6 +14,10 @@ export interface CropRow {
   water: Crop["water"];
   frost_sensitive?: boolean | null;
   propagation?: Crop["propagation"] | null;
+  primary_method?: Crop["primaryMethod"] | null;
+  flowering_note?: string | null;
+  harvest_note?: string | null;
+  first_yield_note?: string | null;
   space_types: Crop["spaceTypes"];
   growth_days_min: number | null;
   growth_days_max: number | null;
@@ -68,6 +72,10 @@ export function mapCropRow(row: CropRow): Crop {
     sun: row.sun,
     water: row.water,
     frostSensitive: row.frost_sensitive ?? false,
+    primaryMethod: row.primary_method ?? null,
+    floweringNote: row.flowering_note ?? null,
+    harvestNote: row.harvest_note ?? null,
+    firstYieldNote: row.first_yield_note ?? null,
     propagation: row.propagation?.length ? row.propagation : [...new Set((row.crop_planting_windows ?? []).map((w) => w.method))],
     spaceTypes: row.space_types ?? [],
     growthDaysMin: row.growth_days_min,

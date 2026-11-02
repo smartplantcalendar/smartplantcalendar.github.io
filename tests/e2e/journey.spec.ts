@@ -54,7 +54,7 @@ test("guest can plan a crop and manage tasks in the calendar", async ({ page, is
   await page.getByRole("button", { name: "التالي" }).click();
   await expect(page.getByRole("button", { name: /البندورة/, pressed: true })).toBeVisible();
   await page.getByRole("button", { name: "التالي" }).click();
-  await page.getByLabel("تاريخ الزراعة أو الشتل").fill(PLANT_DATE);
+  await page.getByLabel("تاريخ الزراعة في الأرض").fill(PLANT_DATE);
   await page.getByLabel("اسم المساحة").fill("سطح البيت");
   await expect(page.getByText(/ضمن المواعيد المقترحة لمنطقتك/)).toBeVisible();
   await page.getByRole("button", { name: "التالي" }).click();
@@ -154,7 +154,7 @@ test("planting in the past can mark earlier tasks as completed", async ({ page }
   await page.getByRole("radio", { name: /أصص زراعية/ }).click();
   await page.getByRole("button", { name: "التالي" }).click();
   await page.getByRole("button", { name: "التالي" }).click();
-  await page.getByLabel("تاريخ الزراعة أو الشتل").fill(d);
+  await page.getByLabel("تاريخ الزراعة في الأرض").fill(d);
   await page.getByRole("button", { name: "التالي" }).click();
   await expect(page.getByText("تاريخ الزراعة في الماضي")).toBeVisible();
   await page.getByRole("button", { name: "أنشئ الخطة" }).click();
@@ -239,7 +239,7 @@ test("client-side navigation keeps the sub-path and guest data persists after re
   await page.getByRole("button", { name: "التالي" }).click();
   await page.getByRole("button", { name: /الخس/ }).click();
   await page.getByRole("button", { name: "التالي" }).click();
-  await page.getByLabel("تاريخ الزراعة أو الشتل").fill(`${NEXT_YEAR}-03-10`);
+  await page.getByLabel("تاريخ الزراعة في الأرض").fill(`${NEXT_YEAR}-03-10`);
   await page.getByRole("button", { name: "التالي" }).click();
   await page.getByRole("button", { name: "أنشئ الخطة" }).click();
   await expect(page.getByRole("heading", { name: "خطتك جاهزة" })).toBeVisible();

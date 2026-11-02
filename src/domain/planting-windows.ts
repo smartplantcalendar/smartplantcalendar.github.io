@@ -1,5 +1,5 @@
 import { addMonths, diffDays, parseISODate, toISODate } from "@/lib/dates";
-import type { ClimateZone, Crop, ISODate, PlantingMethod, PlantingWindow, Season } from "./types";
+import { FIELD_METHODS, type ClimateZone, type Crop, type ISODate, type PlantingMethod, type PlantingWindow, type Season } from "./types";
 import { monthName } from "@/lib/format";
 import { METHOD_LABELS, SEASON_MONTHS } from "./labels";
 
@@ -25,14 +25,116 @@ export function windowAppliesToCountry(w: PlantingWindow, country?: string | nul
   return !w.countryCode || (country != null && w.countryCode === country);
 }
 
-/**
- * Windows that apply to a zone (and country): the zone's own windows when
- * there are any, otherwise the general country-wide windows (zone null).
- */
-export function windowsForZone(crop: Pick<Crop, "windows">, zone: ClimateZone, country?: string | null): PlantingWindow[] {
-  const applicable = crop.windows.filter((w) => windowAppliesToCountry(w, country));
+/** Planting in the final place (field, garden, pot) — not sowing in a nursery. */
+export function isFieldWindow(w: Pick<PlantingWindow, "method">): boolean {
+  return (FIELD_METHODS as readonly PlantingMethod[]).includes(w.method);
+}
+
+function scopedWindows(windows: PlantingWindow[], zone: ClimateZone, country?: string | null): PlantingWindow[] {
+  const applicable = windows.filter((w) => windowAppliesToCountry(w, country));
   const specific = applicable.filter((w) => w.zone === zone);
   return specific.length ? specific : applicable.filter((w) => w.zone === null);
+}
+
+/**
+ * Windows for PLANTING IN THE GROUND that apply to a zone (and country): the
+ * zone's own windows when there are any, otherwise the general country-wide
+ * windows (zone null). Nursery sowing windows are never included: they are
+ * not the planting date (see `nurseryWindowsForZone`).
+ */
+export function windowsForZone(crop: Pick<Crop, "windows">, zone: ClimateZone, country?: string | null): PlantingWindow[] {
+  return scopedWindows(crop.windows.filter(isFieldWindow), zone, country);
+}
+
+/** Secondary: windows for raising your own seedlings in a nursery. */
+export function nurseryWindowsForZone(crop: Pick<Crop, "windows">, zone: ClimateZone, country?: string | null): PlantingWindow[] {
+  return scopedWindows(crop.windows.filter((w) => !isFieldWindow(w)), zone, country);
+}
+
+/**
+ * The farmer's default: planting READY material in the final place. Explicit
+ * `primaryMethod` wins; otherwise the first field method of `propagation`
+ * (listed most common first), else of the field windows, skipping secondary
+ * propagation: a fig, pomegranate or mulberry defaults to a ready sapling,
+ * never to cuttings, and a date palm to a ready rooted offshoot.
+ */
+export function primaryMethod(crop: Pick<Crop, "windows" | "propagation" | "primaryMethod">): PlantingMethod | null {
+  if (crop.primaryMethod && isFieldWindow({ method: crop.primaryMethod })) return crop.primaryMethod;
+  // The farmer's default is buying ready material (a sapling, a seedling, a rooted
+  // offshoot), so secondary propagation (cuttings next to a ready plant) never wins.
+  const secondary = propagationMethods(crop);
+  const usable = (m: PlantingMethod) => isFieldWindow({ method: m }) && !secondary.includes(m);
+  const fromPropagation = (crop.propagation ?? []).find(usable);
+  if (fromPropagation) return fromPropagation;
+  return crop.windows.map((w) => w.method).find(usable) ?? null;
+}
+
+/**
+ * Field methods of a crop, the primary one first. When a ready plant is an
+ * option (a sapling or a nursery seedling), cuttings are SECONDARY
+ * propagation (see `propagationMethods`) and are left out here.
+ */
+export function fieldMethods(crop: Pick<Crop, "windows" | "propagation" | "primaryMethod"> & { category?: Crop["category"] }): PlantingMethod[] {
+  const secondary = propagationMethods(crop);
+  const first = primaryMethod(crop);
+  const all = [...(crop.propagation ?? []), ...crop.windows.map((w) => w.method)].filter((m) => isFieldWindow({ method: m }) && !secondary.includes(m));
+  return [...new Set([...(first ? [first] : []), ...all])];
+}
+
+/**
+ * Ways to PRODUCE the plant yourself rather than plant a ready one: cuttings
+ * when a ready sapling or seedling exists (fig, pomegranate, sage…), and
+ * nursery sowing. Their dates are secondary and never the planting date.
+ */
+export function propagationMethods(crop: Pick<Crop, "windows" | "propagation" | "primaryMethod"> & { category?: Crop["category"] }): PlantingMethod[] {
+  const all = [...(crop.propagation ?? []), ...crop.windows.map((w) => w.method)];
+  const ready = all.includes("saplings") || all.includes("transplanting");
+  const first = crop.primaryMethod ?? null;
+  return [...new Set(all.filter((m) => m === "nursery_sowing" || (m === "cuttings" && ready && first !== "cuttings")))];
+}
+
+/**
+ * Plain title for the planting date, e.g. «موعد زراعة البندورة في الأرض»,
+ * «موعد غرس شجرة الزيتون», «موعد بذر القمح في الأرض»,
+ * «موعد زراعة أبصال النرجس».
+ */
+export function plantingTitle(crop: Pick<Crop, "name" | "category">, method: PlantingMethod | null): string {
+  const n = crop.name;
+  switch (method) {
+    case "direct_sowing":
+      return `موعد بذر ${n} في الأرض`;
+    case "transplanting":
+      return `موعد زراعة ${n} في الأرض`;
+    case "saplings":
+      return crop.category === "tree" ? `موعد غرس شجرة ${n}` : `موعد غرس ${n}`;
+    case "tubers":
+      return `موعد زراعة درنات ${n}`;
+    case "cloves":
+      return `موعد زراعة فصوص ${n}`;
+    case "bulbs":
+      return `موعد زراعة أبصال ${n}`;
+    case "offshoots":
+      return `موعد زراعة فسائل ${n} المتجذرة`;
+    case "cuttings":
+      return `موعد زراعة عُقَل ${n}`;
+    case "nursery_sowing":
+      return `موعد بذر ${n} في المشتل`;
+    default:
+      return `موعد زراعة ${n}`;
+  }
+}
+
+/** The windows the main status uses: the default method's field windows for the zone. */
+export function mainWindowsForZone(
+  crop: Pick<Crop, "windows" | "propagation" | "primaryMethod"> & { category?: Crop["category"] },
+  zone: ClimateZone,
+  country?: string | null,
+): PlantingWindow[] {
+  const field = windowsForZone(crop, zone, country);
+  const first = primaryMethod(crop);
+  // Only the default method's dates: a cutting or offshoot date is never
+  // presented as the date for planting a ready tree. Unknown stays unknown.
+  return first ? field.filter((w) => w.method === first) : field;
 }
 
 /** True when the only applicable windows are general (not zone-specific). */
@@ -46,8 +148,9 @@ export type WindowFit = "in_window" | "near_window" | "outside_window" | "no_dat
  * How well a planting month matches the crop's preliminary windows for a zone.
  * "near" means within one month of a window edge.
  */
-export function evaluateWindowFit(crop: Pick<Crop, "windows">, zone: ClimateZone, month: number, country?: string | null): WindowFit {
-  const windows = windowsForZone(crop, zone, country);
+export function evaluateWindowFit(crop: Pick<Crop, "windows" | "propagation" | "primaryMethod">, zone: ClimateZone, month: number, country?: string | null): WindowFit {
+  // Plans start on the date of planting in the ground with the default method.
+  const windows = mainWindowsForZone(crop, zone, country);
   if (windows.length === 0) return "no_data";
   if (windows.some((w) => monthInWindow(month, w.startMonth, w.endMonth))) return "in_window";
   const near = windows.some(
@@ -62,6 +165,7 @@ export function cropMatchesSeason(crop: Pick<Crop, "windows">, season: Season, z
   // Catalogue filter (describes the data, not a recommendation for a location):
   // a zone filter matches the zone's own windows and general country-wide ones.
   return crop.windows
+    .filter(isFieldWindow)
     .filter((w) => !zone || w.zone === zone || w.zone === null)
     .some((w) => months.some((m) => monthInWindow(m, w.startMonth, w.endMonth)));
 }
@@ -94,8 +198,14 @@ export interface SimpleStatus {
  * Uses the same rule as the recommendation engine (windows are month-level;
  * "soon" = the next window opens within 45 days of `today`).
  */
-export function simplePlantingStatus(crop: Pick<Crop, "windows">, zone: ClimateZone, today: ISODate, country?: string | null): SimpleStatus {
-  const windows = windowsForZone(crop, zone, country);
+export function simplePlantingStatus(
+  crop: Pick<Crop, "windows" | "propagation" | "primaryMethod"> & { category?: Crop["category"] },
+  zone: ClimateZone,
+  today: ISODate,
+  country?: string | null,
+): SimpleStatus {
+  // Planting in the ground with the crop's most common method (never nursery dates).
+  const windows = mainWindowsForZone(crop, zone, country);
   if (windows.length === 0) return { kind: "no_data", month: null, methods: [], general: false };
   const general = isGeneralOnly(windows);
   const { year, month } = parseISODate(today);

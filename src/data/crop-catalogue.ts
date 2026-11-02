@@ -26,6 +26,9 @@ type Entry = [
 const A: LifeCycle = "annual";
 const P: LifeCycle = "perennial";
 
+// Propagation: most common way to PLANT in the final place first (the
+// farmer's default: a ready sapling for trees, a ready seedling for herbs);
+// cuttings/offshoot propagation follow as secondary methods.
 const ENTRIES: Entry[] = [
   // خضار ثمرية
   ["eggplant", "الباذنجان", ["البتنجان", "الباذنجان البلدي"], "Solanum melongena", "fruiting_vegetable", A, ["nursery_sowing", "transplanting"]],
@@ -95,21 +98,21 @@ const ENTRIES: Entry[] = [
   ["coriander", "الكزبرة", ["الكسبرة", "الكزبرة الخضراء", "الكزبرة البلدية"], "Coriandrum sativum", "herb", A, ["direct_sowing"]],
   ["dill", "الشبت", ["الشبث", "الشبت الأخضر"], "Anethum graveolens", "herb", A, ["direct_sowing"]],
   ["fennel", "الشومر", ["الشمرة", "الشمر", "البسباس", "الشمار"], "Foeniculum vulgare", "herb", P, ["direct_sowing", "transplanting"]],
-  ["sage", "الميرمية", ["الميرامية", "المرمية", "القصعين"], "Salvia fruticosa", "herb", P, ["cuttings", "transplanting"]],
-  ["rosemary", "إكليل الجبل", ["الحصا لبان", "حصالبان", "الروزماري", "الإكليل"], "Salvia rosmarinus", "herb", P, ["cuttings", "transplanting"]],
+  ["sage", "الميرمية", ["الميرامية", "المرمية", "القصعين"], "Salvia fruticosa", "herb", P, ["transplanting", "cuttings"]],
+  ["rosemary", "إكليل الجبل", ["الحصا لبان", "حصالبان", "الروزماري", "الإكليل"], "Salvia rosmarinus", "herb", P, ["transplanting", "cuttings"]],
   ["basil", "الريحان", ["الحبق", "الريحان البلدي"], "Ocimum basilicum", "herb", A, ["nursery_sowing", "transplanting", "direct_sowing"]],
   ["chamomile", "البابونج", ["البابونج البلدي"], "Matricaria chamomilla", "herb", A, ["direct_sowing"]],
-  ["lemon-verbena", "اللويزة", ["الليمونية"], "Aloysia citrodora", "herb", P, ["cuttings", "transplanting"]],
+  ["lemon-verbena", "اللويزة", ["الليمونية"], "Aloysia citrodora", "herb", P, ["transplanting", "cuttings"]],
   ["cumin", "الكمون", ["الكمون البلدي"], "Cuminum cyminum", "herb", A, ["direct_sowing"]],
   ["anise", "اليانسون", ["الينسون", "اليانسون البلدي"], "Pimpinella anisum", "herb", A, ["direct_sowing"]],
   ["black-seed", "حبة البركة", ["القزحة", "الحبة السوداء", "الكمون الأسود"], "Nigella sativa", "herb", A, ["direct_sowing"]],
-  ["marjoram", "البردقوش", ["المردقوش", "المردكوش"], "Origanum majorana", "herb", P, ["cuttings", "transplanting"]],
-  ["lavender", "الخزامى", ["اللافندر", "الخزامة"], "Lavandula spp.", "herb", P, ["cuttings", "transplanting"]],
+  ["marjoram", "البردقوش", ["المردقوش", "المردكوش"], "Origanum majorana", "herb", P, ["transplanting", "cuttings"]],
+  ["lavender", "الخزامى", ["اللافندر", "الخزامة"], "Lavandula spp.", "herb", P, ["transplanting", "cuttings"]],
   ["fenugreek", "الحلبة", ["الحلبة الخضراء", "الحلبة البلدية"], "Trigonella foenum-graecum", "herb", A, ["direct_sowing"]],
 
   // أشجار وفواكه
-  ["fig", "التين", ["التين البلدي", "شجرة التين"], "Ficus carica", "tree", P, ["cuttings", "saplings"]],
-  ["pomegranate", "الرمان", ["الرمان البلدي"], "Punica granatum", "tree", P, ["cuttings", "saplings"]],
+  ["fig", "التين", ["التين البلدي", "شجرة التين"], "Ficus carica", "tree", P, ["saplings", "cuttings"]],
+  ["pomegranate", "الرمان", ["الرمان البلدي"], "Punica granatum", "tree", P, ["saplings", "cuttings"]],
   ["almond", "اللوز", ["اللوز الأخضر", "اللوز البلدي"], "Prunus dulcis", "tree", P, ["saplings"]],
   ["apricot", "المشمش", ["المشمش البلدي", "المستكاوي"], "Prunus armeniaca", "tree", P, ["saplings"]],
   ["plum", "البرقوق", ["الخوخ", "العنجاص", "الخوخ الأحمر"], "Prunus domestica", "tree", P, ["saplings"]],
@@ -128,7 +131,7 @@ const ENTRIES: Entry[] = [
   ["guava", "الجوافة", ["الجوافا", "الغوافة"], "Psidium guajava", "tree", P, ["saplings"]],
   ["avocado", "الأفوكادو", ["الأفوكادو البلدي"], "Persea americana", "tree", P, ["saplings"]],
   ["mango", "المانجا", ["المانجو", "المنجا", "المنقا"], "Mangifera indica", "tree", P, ["saplings"]],
-  ["mulberry", "التوت", ["التوت الشامي", "التوت الأبيض", "التوت البلدي"], "Morus spp.", "tree", P, ["cuttings", "saplings"]],
+  ["mulberry", "التوت", ["التوت الشامي", "التوت الأبيض", "التوت البلدي"], "Morus spp.", "tree", P, ["saplings", "cuttings"]],
   ["carob", "الخروب", ["الخرنوب", "شجرة الخروب"], "Ceratonia siliqua", "tree", P, ["saplings"]],
   ["sidr", "السدر", ["النبق"], "Ziziphus spina-christi", "tree", P, ["saplings"]],
   ["pistachio", "الفستق الحلبي", ["الفستق", "الفستق الأخضر"], "Pistacia vera", "tree", P, ["saplings"]],
@@ -137,6 +140,9 @@ const ENTRIES: Entry[] = [
   ["persimmon", "الكاكا", ["الكاكي", "الخرما"], "Diospyros kaki", "tree", P, ["saplings"]],
   ["hawthorn", "الزعرور", ["الزعرور البلدي", "الزعرور الأحمر"], "Crataegus azarolus", "tree", P, ["saplings"]],
   ["sumac", "السماق", ["السمّاق", "السماق البلدي"], "Rhus coriaria", "tree", P, ["saplings", "cuttings"]],
+  // أزهار ونباتات زينة
+  ["narcissus", "النرجس", ["نرجس", "زهرة النرجس", "العبهر"], "Narcissus spp.", "ornamental", P, ["bulbs"]],
+  ["rose", "الورد", ["الورد البلدي", "الورد الجوري", "الجوري", "الوردة"], "Rosa spp.", "ornamental", P, ["saplings", "cuttings"]],
   ["caper", "القبار", ["الكبار", "الشفلح", "القبّار"], "Capparis spinosa", "herb", P, ["cuttings", "direct_sowing"]],
 ];
 

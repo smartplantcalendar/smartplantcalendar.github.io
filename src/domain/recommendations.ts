@@ -19,7 +19,7 @@
 import { addMonths, daysInMonth, diffDays, parseISODate, toISODate } from "@/lib/dates";
 import { formatDays, formatMonthRange, monthName } from "@/lib/format";
 import { CLIMATE_ZONE_LABELS, COUNTRY_LABELS, GREENHOUSE_NOTICE, METHOD_LABELS, SPACES_WITHOUT_RULES, SPACE_TYPE_LABELS } from "./labels";
-import { isGeneralOnly, monthInWindow, windowsForZone } from "./planting-windows";
+import { isGeneralOnly, mainWindowsForZone, monthInWindow, propagationMethods, windowsForZone } from "./planting-windows";
 import type { ClimateZone, Crop, ISODate, PlantingMethod, PlantingWindow, SpaceType } from "./types";
 import type { WeatherAlert } from "./weather";
 
@@ -28,16 +28,17 @@ export const SOON_DAYS = 45;
 export const METHOD_GROUPS = {
   all: null,
   seeds: ["direct_sowing"],
-  seedlings: ["nursery_sowing", "transplanting", "saplings", "cuttings", "offshoots"],
-  tubers: ["tubers", "cloves"],
+  // Ready material planted in the ground; nursery sowing is never a planting date here.
+  seedlings: ["transplanting", "saplings", "cuttings", "offshoots"],
+  tubers: ["tubers", "cloves", "bulbs"],
 } as const satisfies Record<string, readonly PlantingMethod[] | null>;
 export type MethodGroup = keyof typeof METHOD_GROUPS;
 
 export const METHOD_GROUP_LABELS: Record<MethodGroup, string> = {
   all: "كل الطرق",
-  seeds: "بذور (بذر مباشر)",
-  seedlings: "أشتال (المشتل والنقل) أو غراس أو عُقَل أو فسائل",
-  tubers: "درنات أو فصوص",
+  seeds: "بذور تُبذر مباشرة في الأرض",
+  seedlings: "أشتال أو غراس أو عُقَل أو فسائل جاهزة",
+  tubers: "درنات أو فصوص أو أبصال",
 };
 
 export type RecommendationStatus = "now" | "protect" | "soon" | "later" | "no_data";
@@ -104,7 +105,13 @@ export function recommendCrop(crop: Crop, input: RecommendationInput): Recommend
   const group = input.methodGroup ?? "all";
   const month = parseISODate(today).month;
   const zoneLabel = CLIMATE_ZONE_LABELS[zone];
-  const windows = windowsForZone(crop, zone, input.country).filter((w) => methodAllowed(w.method, group));
+  // "All methods" means the farmer's default (ready material in the ground); a
+  // method filter never picks secondary propagation (cuttings of a fig tree).
+  const secondary = propagationMethods(crop);
+  const windows =
+    group === "all"
+      ? mainWindowsForZone(crop, zone, input.country)
+      : windowsForZone(crop, zone, input.country).filter((w) => methodAllowed(w.method, group) && !secondary.includes(w.method));
   const general = isGeneralOnly(windows);
   const countryName = COUNTRY_LABELS[windows[0]?.countryCode ?? ""] ?? "المنطقة";
   const where = general ? `عمومًا في ${countryName} (موعد عام غير خاص بمنطقتك)` : `لمنطقتك (${zoneLabel})`;

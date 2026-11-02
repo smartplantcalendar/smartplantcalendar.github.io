@@ -8,7 +8,7 @@
 import { generatePlan } from "@/domain/plan-generator";
 import { findRegion, REGIONS } from "@/data/regions";
 import { countryFromCoordinates } from "@/domain/geo";
-import { windowsForZone } from "@/domain/planting-windows";
+import { mainWindowsForZone, primaryMethod } from "@/domain/planting-windows";
 
 /** Country for a plan: from the garden's coordinates (null near borders), else from the chosen town. */
 function planCountry(input: { regionId: string | null; latitude: number | null; longitude: number | null }): string | null {
@@ -106,7 +106,7 @@ export function localCreatePlan(snap: UserDataSnapshot, input: PlanRequest, crop
     cropSlug: crop.slug,
     cropName: crop.name,
     plantedOn: input.plantedOn,
-    method: windowsForZone(crop, input.zone, planCountry(input))[0]?.method ?? crop.windows[0]?.method ?? null,
+    method: mainWindowsForZone(crop, input.zone, planCountry(input))[0]?.method ?? primaryMethod(crop),
     areaM2: input.areaM2,
     quantity: input.quantity,
     status: "active",

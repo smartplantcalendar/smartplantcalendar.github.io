@@ -35,6 +35,7 @@ import {
   DIFFICULTIES,
   GUIDE_SECTIONS,
   LIFE_CYCLES,
+  FIELD_METHODS,
   PLANTING_METHODS,
   SPACE_TYPES,
   SUN_REQUIREMENTS,
@@ -61,6 +62,10 @@ function toCropForm(c: Crop | null, published: boolean): CropForm {
     sun: c ? c.sun : "full_sun",
     water: c ? c.water : "moderate",
     propagation: c?.propagation ?? [],
+    primaryMethod: c?.primaryMethod && c.primaryMethod !== "nursery_sowing" ? c.primaryMethod : null,
+    floweringNote: c?.floweringNote ?? "",
+    harvestNote: c?.harvestNote ?? "",
+    firstYieldNote: c?.firstYieldNote ?? "",
     frostSensitive: c?.frostSensitive ?? false,
     spaceTypes: c?.spaceTypes ?? ["home_garden"],
     growthDaysMin: c?.growthDaysMin ?? null,
@@ -224,6 +229,21 @@ export function CropEditor({ crop, cropId, published }: { crop: Crop | null; cro
             </Field>
             <Field label="ملخص الري" htmlFor="wateringSummary" className="md:col-span-2">
               <Input id="wateringSummary" {...form.register("wateringSummary")} />
+            </Field>
+            <Field label="الطريقة الأكثر شيوعًا للزراعة في الأرض" htmlFor="primaryMethod" hint="تحدد الموعد الرئيسي المعروض للمزارع. البذر في المشتل ليس موعد زراعة.">
+              <Select id="primaryMethod" {...form.register("primaryMethod", { setValueAs: (v) => v || null })}>
+                <option value="">تلقائي (حسب طرق الإكثار)</option>
+                {FIELD_METHODS.map((m) => <option key={m} value={m}>{METHOD_LABELS[m]}</option>)}
+              </Select>
+            </Field>
+            <Field label="موعد الإزهار" htmlFor="floweringNote" hint="اتركه فارغًا إن لم يتوفر مصدر.">
+              <Input id="floweringNote" {...form.register("floweringNote")} />
+            </Field>
+            <Field label="موعد الحصاد أو القطاف" htmlFor="harvestNote">
+              <Input id="harvestNote" {...form.register("harvestNote")} />
+            </Field>
+            <Field label="المدة حتى أول إنتاج (للأشجار)" htmlFor="firstYieldNote">
+              <Input id="firstYieldNote" {...form.register("firstYieldNote")} />
             </Field>
             <Field label="مصدر المعلومات ودرجة الثقة" htmlFor="sourceNote" className="md:col-span-2">
               <Textarea id="sourceNote" {...form.register("sourceNote")} />

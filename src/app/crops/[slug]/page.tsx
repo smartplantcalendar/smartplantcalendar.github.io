@@ -1,21 +1,20 @@
-import { ArrowLeft, CalendarRange, Clock3, Droplets, ExternalLink, Home, Info, Sprout, Sun } from "lucide-react";
+import { ArrowLeft, CalendarRange, Clock3, Droplets, ExternalLink, Flower2, Home, Info, Sprout, Sun, Wheat } from "lucide-react";
 import { absoluteUrl } from "@/lib/env";
 import type { Metadata } from "next";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { CropImage } from "@/components/brand/crop-image";
-import { growthLabel } from "@/components/crops/crop-card";
 import { PlantingStatus } from "@/components/crops/planting-status";
 import { findSource, sourcesForCrop } from "@/data/crop-sources";
 import { otherMeanings } from "@/domain/ambiguous-names";
 import { isPlannable } from "@/domain/crop-search";
+import { fieldMethods, isFieldWindow, plantingTitle, primaryMethod, propagationMethods } from "@/domain/planting-windows";
+import { PlantingWindowsTable } from "@/components/crops/planting-windows-table";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Alert } from "@/components/ui/feedback";
 import {
   CATEGORY_LABELS,
-  CLIMATE_ZONE_LABELS,
-  COUNTRY_LABELS,
   DATA_STATUS_LABELS,
   DIFFICULTY_LABELS,
   GUIDE_SECTION_LABELS,
@@ -25,8 +24,7 @@ import {
   SUN_LABELS,
   WATER_LABELS,
 } from "@/domain/labels";
-import { CLIMATE_ZONES } from "@/domain/types";
-import { formatMonthRange } from "@/lib/format";
+import { formatNumber } from "@/lib/format";
 import { getCropBySlug, getCrops } from "@/services/crops";
 
 
@@ -65,11 +63,37 @@ export default async function CropDetailPage({ params }: { params: Promise<{ slu
     .filter((src) => src !== undefined);
   const references = sourcesForCrop(crop.slug).filter((r) => r.status === "to_review");
   const notDocumented = "غير موثّق بعد";
-  const facts: { icon: typeof Sun; label: string; value: string; note?: string }[] = [
-    { icon: Sprout, label: "طرق الزراعة الشائعة", value: crop.propagation?.length ? crop.propagation.map((m) => METHOD_LABELS[m]).join("، ") : notDocumented },
+  const primary = primaryMethod(crop);
+  const title = plantingTitle(crop, primary);
+  const methods = fieldMethods(crop);
+  // Secondary propagation (cuttings next to a ready plant, nursery sowing) is
+  // producing the plant yourself: never shown as the planting date.
+  const secondary = propagationMethods(crop);
+  const fieldWindows = crop.windows.filter((w) => isFieldWindow(w) && !secondary.includes(w.method));
+  const nurseryWindows = crop.windows.filter((w) => !isFieldWindow(w));
+  const cuttingWindows = crop.windows.filter((w) => w.method === "cuttings" && secondary.includes("cuttings"));
+  const secondaryCuttings = secondary.includes("cuttings");
+  const usesSeedlings = methods.includes("transplanting") || nurseryWindows.length > 0 || secondary.includes("nursery_sowing");
+  // Which "do it yourself" section the crop gets, if any.
+  const selfKind: "seedlings" | "saplings" | "offshoots" | null =
+    primary === "offshoots" ? "offshoots" : primary === "saplings" && secondaryCuttings ? "saplings" : usesSeedlings || secondaryCuttings ? "seedlings" : null;
+  const perennial = crop.lifeCycle === "perennial";
+  // Planting, flowering, harvest and first yield are separate facts.
+  const harvestValue =
+    crop.growthDaysMin != null && crop.growthDaysMax != null
+      ? `أول حصاد أو قطاف بعد نحو ${formatNumber(crop.growthDaysMin)}–${formatNumber(crop.growthDaysMax)} يومًا من الزراعة في الأرض`
+      : (crop.harvestNote ?? notDocumented);
+  const facts: { icon: typeof Sun; label: string; value: string; note?: string; testId?: string }[] = [
+    { icon: Sprout, label: "طرق الزراعة في الأرض", value: methods.length ? methods.map((m) => METHOD_LABELS[m]).join("، ") : notDocumented, testId: "fact-methods" },
     { icon: Sun, label: "الشمس", value: crop.sun ? SUN_LABELS[crop.sun] : notDocumented },
     { icon: Droplets, label: "الري", value: crop.wateringSummary || (crop.water ? `احتياج ${WATER_LABELS[crop.water]}` : notDocumented) },
-    { icon: Clock3, label: "مدة النمو التقريبية", value: crop.dataStatus === "incomplete" && crop.growthDaysMin == null ? notDocumented : growthLabel(crop), note: crop.growthNote },
+    { icon: Flower2, label: "موعد الإزهار", value: crop.floweringNote ?? notDocumented, testId: "fact-flowering" },
+    ...(perennial
+      ? [
+          { icon: Clock3, label: "المدة حتى أول إنتاج", value: crop.firstYieldNote ?? notDocumented, testId: "fact-first-yield" },
+          { icon: Wheat, label: "موسم الحصاد أو القطاف", value: crop.harvestNote ?? notDocumented, testId: "fact-harvest" },
+        ]
+      : [{ icon: Wheat, label: "الحصاد أو القطاف", value: harvestValue, note: crop.growthDaysMin != null ? crop.growthNote : undefined, testId: "fact-harvest" }]),
     { icon: Home, label: "المساحات المناسبة", value: crop.spaceTypes.length ? crop.spaceTypes.map((s) => SPACE_TYPE_LABELS[s]).join("، ") : notDocumented },
   ];
 
@@ -122,7 +146,8 @@ export default async function CropDetailPage({ params }: { params: Promise<{ slu
             </p>
           ))}
           <div className="rounded-2xl border border-border bg-surface p-4 shadow-xs">
-            <p className="mb-2 text-sm font-bold text-muted-foreground">موعده في منطقتك</p>
+            <p className="mb-2 text-base font-extrabold" data-testid="planting-title">{title}</p>
+            <p className="mb-2 text-xs text-muted-foreground">في منطقتك، باستخدام {primary ? METHOD_LABELS[primary].replace(" في الأرض", "") : "الطريقة المعتادة"}</p>
             <PlantingStatus crop={crop} />
           </div>
           <div className="flex flex-wrap gap-3">
@@ -134,7 +159,7 @@ export default async function CropDetailPage({ params }: { params: Promise<{ slu
               </Button>
             ) : null}
             <Button asChild variant="outline" size="lg">
-              <a href="#windows">مواعيد الزراعة</a>
+              <a href="#windows">{title}</a>
             </Button>
           </div>
           {plannable ? null : (
@@ -146,7 +171,7 @@ export default async function CropDetailPage({ params }: { params: Promise<{ slu
 
       <section aria-label="معلومات سريعة" className="mt-10 grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
         {facts.map((f) => (
-          <div key={f.label} className="rounded-xl border border-border bg-surface p-4 shadow-xs">
+          <div key={f.label} className="rounded-xl border border-border bg-surface p-4 shadow-xs" data-testid={f.testId}>
             <f.icon className="mb-2 size-5 text-brand-600" aria-hidden />
             <p className="text-xs font-semibold text-subtle-foreground">{f.label}</p>
             <p className="mt-1 font-semibold leading-7">{f.value}</p>
@@ -159,69 +184,84 @@ export default async function CropDetailPage({ params }: { params: Promise<{ slu
         <div className="space-y-12">
           <section id="windows" aria-labelledby="windows-title" className="scroll-mt-24">
             <h2 id="windows-title" className="mb-2 flex items-center gap-2 text-2xl font-extrabold">
-              <CalendarRange className="size-6 text-brand-600" aria-hidden /> مواعيد الزراعة حسب المنطقة
+              <CalendarRange className="size-6 text-brand-600" aria-hidden /> {title} حسب المنطقة
             </h2>
-            <p className="mb-4 text-sm text-muted-foreground">
-              تقديرات أولية عامة. الأشهر بالتقويم الميلادي بأسمائها الشامية. «بذر في المشتل» موعد مختلف عن «نقل الأشتال إلى الأرض».
+            <p className="mb-4 text-sm leading-7 text-muted-foreground">
+              هذه مواعيد الزراعة في المكان النهائي (الأرض أو الحديقة أو الأصيص) باستخدام بذور أو أشتال أو غراس جاهزة. تقديرات أولية عامة، والأشهر بأسمائها الشامية.
             </p>
-            {crop.windows.length === 0 ? (
+            {fieldWindows.length === 0 ? (
               <Alert tone="info" title="لا توجد معلومات موثوقة كافية">
-                لم نوثّق بعد مواعيد زراعة {crop.name} في أي منطقة من مناطق فلسطين، ولن نعرض موعدًا تقديريًا دون مصدر. اسأل الإرشاد الزراعي في منطقتك.
+                لم نوثّق بعد {title} في أي منطقة من مناطق فلسطين، ولن نعرض موعدًا تقديريًا دون مصدر. اسأل الإرشاد الزراعي في منطقتك.
               </Alert>
             ) : (
-            <div className="overflow-x-auto rounded-xl border border-border bg-surface">
-              <table className="w-full min-w-[32rem] text-start text-sm">
-                <caption className="sr-only">مواعيد زراعة {crop.name} حسب المنطقة المناخية</caption>
-                <thead className="bg-surface-muted text-muted-foreground">
-                  <tr>
-                    <th scope="col" className="px-4 py-3 text-start font-semibold">المنطقة المناخية</th>
-                    <th scope="col" className="px-4 py-3 text-start font-semibold">الفترة المقترحة</th>
-                    <th scope="col" className="px-4 py-3 text-start font-semibold">الطريقة</th>
-                    <th scope="col" className="px-4 py-3 text-start font-semibold">ملاحظة</th>
-                    <th scope="col" className="px-4 py-3 text-start font-semibold">المصدر</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-border">
-                  {[...(crop.windows.some((w) => w.zone === null) ? [null] : []), ...CLIMATE_ZONES].flatMap((zone) => {
-                    const ws = crop.windows.filter((w) => w.zone === zone);
-                    const generalLabel = `عام في ${COUNTRY_LABELS[ws[0]?.countryCode ?? ""] ?? "البلد"} (غير خاص بمنطقة)`;
-                    if (zone === null && ws.length === 0) return [];
-                    if (ws.length === 0)
-                      return [
-                        <tr key={zone}>
-                          <th scope="row" className="px-4 py-3 text-start font-semibold">{zone ? CLIMATE_ZONE_LABELS[zone] : generalLabel}</th>
-                          <td colSpan={4} className="px-4 py-3 text-subtle-foreground">لا تتوفر بيانات موثّقة لهذه المنطقة</td>
-                        </tr>,
-                      ];
-                    return ws.map((w, i) => (
-                      <tr key={`${zone ?? "general"}-${i}`} data-testid={zone ? undefined : "general-window"}>
-                        {i === 0 ? (
-                          <th scope="row" rowSpan={ws.length} className="px-4 py-3 text-start align-top font-semibold">
-                            {zone ? CLIMATE_ZONE_LABELS[zone] : generalLabel}
-                            {zone && w.countryCode ? (
-                              <span className="block text-xs font-normal text-muted-foreground">في {COUNTRY_LABELS[w.countryCode] ?? w.countryCode}</span>
-                            ) : null}
-                          </th>
-                        ) : null}
-                        <td className="px-4 py-3 font-semibold text-brand-700">{formatMonthRange(w.startMonth, w.endMonth)}</td>
-                        <td className="px-4 py-3">{METHOD_LABELS[w.method]}</td>
-                        <td className="px-4 py-3 text-muted-foreground">{w.note ?? "—"}</td>
-                        <td className="px-4 py-3 text-muted-foreground" data-testid="window-source">
-                          {findSource(w.sourceId) ? (
-                            <a href={findSource(w.sourceId)!.url} target="_blank" rel="noopener noreferrer" className="font-semibold text-brand-700 underline underline-offset-4">
-                              {findSource(w.sourceId)!.publisher}
-                            </a>
-                          ) : (
-                            "معرفة عامة أولية"
-                          )}
-                        </td>
-                      </tr>
-                    ));
-                  })}
-                </tbody>
-              </table>
-            </div>
+              <div className="flex flex-col gap-6">
+                {methods
+                  .filter((m) => fieldWindows.some((w) => w.method === m))
+                  .map((m) => (
+                    <div key={m} className="flex flex-col gap-2" data-testid={`method-${m}`}>
+                      <h3 className="font-bold">
+                        {METHOD_LABELS[m]}
+                        {m === primary ? <span className="ms-2 text-sm font-semibold text-brand-700">(الطريقة الأكثر شيوعًا)</span> : null}
+                      </h3>
+                      <PlantingWindowsTable windows={fieldWindows.filter((w) => w.method === m)} caption={`${plantingTitle(crop, m)} حسب المنطقة المناخية`} />
+                    </div>
+                  ))}
+                {methods.filter((m) => !fieldWindows.some((w) => w.method === m)).length ? (
+                  <p className="text-sm text-muted-foreground">
+                    طرق أخرى ممكنة دون مواعيد موثّقة بعد:{" "}
+                    {methods
+                      .filter((m) => !fieldWindows.some((w) => w.method === m))
+                      .map((m) => METHOD_LABELS[m])
+                      .join("، ")}
+                    .
+                  </p>
+                ) : null}
+              </div>
             )}
+
+            {selfKind ? (
+              <details
+                className="mt-6 rounded-xl border border-border bg-surface-muted p-4"
+                data-testid={selfKind === "seedlings" ? "nursery-section" : "propagation-section"}
+              >
+                <summary className="cursor-pointer font-bold">
+                  {selfKind === "seedlings" ? "لمن يريد تجهيز الأشتال بنفسه" : selfKind === "saplings" ? "لمن يريد إكثار الغرسة بنفسه" : "لمن يريد إكثار الفسائل بنفسه"}
+                </summary>
+                <div className="mt-3 flex flex-col gap-3 text-sm leading-7 text-muted-foreground">
+                  {selfKind === "offshoots" ? (
+                    <p data-testid="offshoot-note">
+                      الموعد المقصود أعلاه هو زراعة فسيلة جاهزة متجذرة في الأرض. أما فصل الفسائل عن النبتة الأم وتجذيرها فهو إكثار، وموعده ليس موعد زراعة الفسيلة الجاهزة، ولا نحسب أحدهما من الآخر.
+                    </p>
+                  ) : null}
+                  {selfKind === "saplings" ? (
+                    <p data-testid="cuttings-note">
+                      الطريقة الافتراضية هي شراء غرسة جاهزة وغرسها في الأرض. أخذ العُقَل وتجذيرها طريقة لإنتاج الغرسة بنفسك، وموعدها ليس موعد غرس الشجرة الجاهزة، ولا نستعمله في «ماذا أزرع الآن؟» ولا في الخطط.
+                    </p>
+                  ) : null}
+                  {selfKind === "seedlings" && usesSeedlings ? (
+                    <p>بذر البذور في المشتل يسبق الزراعة في الأرض بأسابيع، وليس موعد الزراعة المعروض أعلاه. لا نستعمله في «ماذا أزرع الآن؟» ولا في الخطط.</p>
+                  ) : null}
+                  {selfKind === "seedlings" && secondaryCuttings ? (
+                    <p data-testid="cuttings-note">يمكن أيضًا إنتاج الأشتال من العُقَل، وموعد أخذ العُقَل وتجذيرها ليس موعد زراعة الشتلة الجاهزة في الأرض.</p>
+                  ) : null}
+                  {secondaryCuttings ? (
+                    cuttingWindows.length ? (
+                      <PlantingWindowsTable windows={cuttingWindows} caption={`موعد أخذ عُقَل ${crop.name} وتجذيرها`} />
+                    ) : (
+                      <p data-testid="cuttings-unknown">لا تتوفر لدينا مواعيد موثّقة لأخذ عُقَل {crop.name} وتجذيرها.</p>
+                    )
+                  ) : null}
+                  {usesSeedlings ? (
+                    nurseryWindows.length ? (
+                      <PlantingWindowsTable windows={nurseryWindows} caption={`موعد بذر ${crop.name} في المشتل`} />
+                    ) : (
+                      <p data-testid="nursery-unknown">لا تتوفر لدينا مواعيد موثّقة لبذر {crop.name} في المشتل، ولن نحسبها من موعد الزراعة في الأرض.</p>
+                    )
+                  ) : null}
+                  {selfKind === "offshoots" ? <p data-testid="offshoot-unknown">لا تتوفر لدينا مواعيد موثّقة لفصل فسائل {crop.name} وتجذيرها.</p> : null}
+                </div>
+              </details>
+            ) : null}
           </section>
 
           {crop.guide.map((g) => (
@@ -288,7 +328,7 @@ export default async function CropDetailPage({ params }: { params: Promise<{ slu
             <p className="mb-2 text-sm font-bold">في هذه الصفحة</p>
             <ul className="space-y-1 text-sm">
               <li>
-                <a href="#windows" className="block rounded-md px-2 py-1.5 text-muted-foreground hover:bg-surface-muted hover:text-foreground">مواعيد الزراعة</a>
+                <a href="#windows" className="block rounded-md px-2 py-1.5 text-muted-foreground hover:bg-surface-muted hover:text-foreground">{title}</a>
               </li>
               {crop.guide.map((g) => (
                 <li key={g.section}>
