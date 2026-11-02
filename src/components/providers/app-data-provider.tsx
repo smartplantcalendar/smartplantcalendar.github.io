@@ -55,6 +55,8 @@ interface ProfileLocationRow {
   elevation_m?: number | string | null;
   external_geo_consent?: boolean | null;
   location_confirmed_at?: string | null;
+  location_country?: string | null;
+  location_label_source?: string | null;
 }
 
 function profileToLocation(p: ProfileLocationRow): SavedLocation | null {
@@ -78,6 +80,8 @@ function profileToLocation(p: ProfileLocationRow): SavedLocation | null {
     timezone: p.timezone || DEFAULT_TIMEZONE,
     externalConsent: Boolean(p.external_geo_consent),
     confirmedAt: p.location_confirmed_at ?? new Date(0).toISOString(),
+    countryCode: p.location_country ?? null,
+    labelSource: p.location_label_source ?? undefined,
   });
 }
 
@@ -176,7 +180,7 @@ export function AppDataProvider({ children }: { children: React.ReactNode }) {
       if (supabase) {
         const { data: profile } = await supabase
           .from("profiles")
-          .select("role, region_id, zone, latitude, longitude, timezone, location_label, location_source, location_accuracy_m, elevation_m, external_geo_consent, location_confirmed_at")
+          .select("role, region_id, zone, latitude, longitude, timezone, location_label, location_source, location_accuracy_m, elevation_m, external_geo_consent, location_confirmed_at, location_country, location_label_source")
           .eq("id", u.id)
           .maybeSingle();
         setIsAdmin(profile?.role === "admin");

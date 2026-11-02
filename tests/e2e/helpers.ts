@@ -46,8 +46,26 @@ export interface ExternalCalls {
   tiles: number;
 }
 
+export interface MockPlace {
+  lat: string;
+  lon: string;
+  display_name: string;
+  address?: Record<string, string>;
+}
+
 /** Mocks OpenStreetMap / Open-Meteo and records every request URL. */
-export async function mockGeoServices(page: Page, opts: { elevation?: number; reverseLabel?: string } = {}): Promise<ExternalCalls> {
+export async function mockGeoServices(
+  page: Page,
+  opts: {
+    elevation?: number;
+    reverseLabel?: string;
+    /** Address returned by reverse geocoding (default: بيت أمر، محافظة الخليل، فلسطين). */
+    reverseAddress?: Record<string, string>;
+    /** Simulate no internet for Nominatim. */
+    nominatimOffline?: boolean;
+    searchResults?: MockPlace[];
+  } = {},
+): Promise<ExternalCalls> {
   const calls: ExternalCalls = { nominatim: [], elevation: [], forecast: [], tiles: 0 };
   await page.route("https://tile.openstreetmap.org/**", (route) => {
     calls.tiles += 1;
@@ -56,27 +74,26 @@ export async function mockGeoServices(page: Page, opts: { elevation?: number; re
   await page.route("https://nominatim.openstreetmap.org/**", (route) => {
     const url = route.request().url();
     calls.nominatim.push(url);
+    if (opts.nominatimOffline) return route.abort("internetdisconnected");
     const cors = { "Access-Control-Allow-Origin": "*" };
     if (url.includes("/reverse")) {
+      const address = opts.reverseAddress ?? { village: opts.reverseLabel ?? "بيت أمر", state_district: "محافظة الخليل", country_code: "ps" };
       return route.fulfill({
         status: 200,
         contentType: "application/json",
         headers: cors,
-        body: JSON.stringify({
-          lat: "31.6103",
-          lon: "35.0711",
-          display_name: "بيت أمر، محافظة الخليل، الضفة الغربية، فلسطين",
-          address: { village: opts.reverseLabel ?? "بيت أمر", state_district: "محافظة الخليل" },
-        }),
+        body: JSON.stringify({ lat: "31.6103", lon: "35.0711", display_name: Object.values(address).join("، "), address }),
       });
     }
     return route.fulfill({
       status: 200,
       contentType: "application/json",
       headers: cors,
-      body: JSON.stringify([
-        { lat: "32.2763", lon: "35.1950", display_name: "سبسطية، محافظة نابلس، فلسطين", address: { village: "سبسطية", state_district: "محافظة نابلس" } },
-      ]),
+      body: JSON.stringify(
+        opts.searchResults ?? [
+          { lat: "32.2763", lon: "35.1950", display_name: "سبسطية، محافظة نابلس، فلسطين", address: { village: "سبسطية", state_district: "محافظة نابلس", country_code: "ps" } },
+        ],
+      ),
     });
   });
   await page.route("https://api.open-meteo.com/v1/elevation**", (route) => {

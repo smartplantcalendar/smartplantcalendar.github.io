@@ -270,6 +270,8 @@ function PlannerWizardInner({ crops, zoneOverrides = {} }: { crops: Crop[]; zone
               </div>
             ) : (
               <LocationPicker
+                showIntro={false}
+                startInEdit
                 onConfirmed={() => {
                   setChangingLocation(false);
                   setZoneChoice(null);

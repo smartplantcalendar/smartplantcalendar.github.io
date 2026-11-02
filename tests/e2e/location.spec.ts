@@ -1,71 +1,189 @@
-import { expect, test } from "@playwright/test";
+import { expect, test, type BrowserContext, type Page } from "@playwright/test";
 import { failGeolocation, go, mockGeoServices, seedLocation } from "./helpers";
 
-test.describe("precise location", () => {
-  test("high-accuracy GPS with consent: name, elevation-based zone, saved and reused", async ({ page, context }) => {
-    await context.grantPermissions(["geolocation"]);
-    await context.setGeolocation({ latitude: 31.6103, longitude: 35.0711, accuracy: 12 });
-    const calls = await mockGeoServices(page, { elevation: 905 });
-    await go(page, "/location/");
-    await page.getByRole("checkbox", { name: /أوافق على استخدام خدمات الخرائط والطقس/ }).check();
-    await page.getByRole("button", { name: "حدّد موقعي بدقة" }).click();
-    await expect(page.getByText("دقة عالية")).toBeVisible();
-    await expect(page.getByText("± 12 م").first()).toBeVisible();
-    await expect(page.getByTestId("location-coords")).toHaveText("31.61030, 35.07110");
-    await expect(page.getByTestId("location-label")).toHaveText("بيت أمر، محافظة الخليل");
-    await expect(page.getByText(/905 م فوق سطح البحر/).first()).toBeVisible();
-    await expect(page.getByText(/المقترح: جبلي \/ مرتفعات/)).toBeVisible();
-    // The nearest listed city is shown as a reference, not as the location.
-    await expect(page.getByText(/أقرب مدينة في قائمتنا/)).toBeVisible();
-    await page.getByRole("button", { name: "تأكيد الموقع وحفظه" }).click();
-    await expect(page.getByTestId("saved-location-label")).toHaveText("بيت أمر، محافظة الخليل");
+const GPS = { latitude: 31.6103, longitude: 35.0711 }; // بيت أمر
 
+async function savedInStorage(page: Page) {
+  return page.evaluate(() => JSON.parse(window.localStorage.getItem("smartplant:location:v1") ?? "null"));
+}
+
+async function locateWithGps(page: Page, context: BrowserContext, accuracy = 12, at = GPS) {
+  await context.grantPermissions(["geolocation"]);
+  await context.setGeolocation({ ...at, accuracy });
+  await go(page, "/location/");
+  await expect(page.getByRole("heading", { level: 1, name: "وين أرضك؟" })).toBeVisible();
+  await expect(page.getByText("حدد موقع أرضك حتى نعرف مواعيد الزراعة المناسبة لمنطقتك.")).toBeVisible();
+  await page.getByRole("button", { name: "حدد موقعي تلقائيًا" }).click();
+}
+
+test.describe("location: farmer flow", () => {
+  test("one button, consent, «هل هذه قريتك؟», saved and reused everywhere (بيت أمر)", async ({ page, context }) => {
+    const calls = await mockGeoServices(page, { elevation: 905 });
+    await locateWithGps(page, context);
+    // Short consent before anything leaves the device.
+    await expect(page.getByRole("heading", { name: "نعرف اسم قريتك؟" })).toBeVisible();
+    expect(calls.nominatim).toHaveLength(0);
+    await page.getByRole("button", { name: "نعم، اعرف اسم قريتي" }).click();
+    await expect(page.getByTestId("location-label")).toHaveText("بيت أمر");
+    await expect(page.getByTestId("location-district")).toHaveText("محافظة الخليل");
+    await expect(page.getByRole("heading", { name: "هل هذه قريتك؟" })).toBeVisible();
+    await expect(page.getByText(/© مساهمو OpenStreetMap/).first()).toBeVisible();
+    // Technical details stay folded away.
+    await expect(page.getByTestId("location-coords")).toBeHidden();
+    await page.getByRole("button", { name: "نعم، احفظ الموقع" }).click();
+    await expect(page.getByText("تم حفظ موقع أرضك بنجاح")).toBeVisible();
+    await expect(page.getByTestId("location-saved-name")).toHaveText("بيت أمر، محافظة الخليل");
+
+    const saved = await savedInStorage(page);
+    expect(saved).toMatchObject({ version: 2, source: "gps", latitude: 31.6103, longitude: 35.0711, accuracyM: 12, labelSource: "osm", countryCode: "PS", zone: "highland" });
     // Elevation lookups are rounded to ~100 m before leaving the device.
     expect(calls.elevation[0]).toContain("latitude=31.610&longitude=35.071");
+    // Reverse geocoding happened once, after consent.
+    expect(calls.nominatim.filter((u) => u.includes("/reverse"))).toHaveLength(1);
 
-    // Weather uses the real (rounded) coordinates of the confirmed location.
+    // Recommendations, weather and the planner use the new location.
+    await page.getByRole("link", { name: /اعرف ماذا تزرع الآن/ }).click();
+    await expect(page).toHaveURL(/\/recommendations\/$/);
+    await expect(page.getByTestId("saved-location-label")).toHaveText("بيت أمر، محافظة الخليل");
     await go(page, "/weather/");
     await expect(page.getByRole("heading", { name: "الطقس في بيت أمر، محافظة الخليل" })).toBeVisible();
     await expect.poll(() => calls.forecast.length).toBeGreaterThan(0);
     expect(calls.forecast[0]).toContain("latitude=31.6100&longitude=35.0700");
-
-    // Reused by the planner and the dashboard after a reload.
     await go(page, "/planner/");
     await expect(page.getByTestId("saved-location-label")).toHaveText("بيت أمر، محافظة الخليل");
-    await go(page, "/dashboard/");
-    await page.reload();
-    await expect(page.getByText("ماذا أزرع الآن في منطقتي؟").first()).toBeVisible();
+
+    // Reopening the page shows the saved name directly, without asking again.
+    await go(page, "/location/");
+    await expect(page.getByTestId("location-saved-name")).toHaveText("بيت أمر، محافظة الخليل");
+    await expect(page.getByRole("button", { name: "تغيير" })).toBeVisible();
+    await expect(page.getByRole("button", { name: "حدد موقعي تلقائيًا" })).toHaveCount(0);
   });
 
-  test("without consent nothing is sent to external services", async ({ page, context }) => {
-    await context.grantPermissions(["geolocation"]);
-    await context.setGeolocation({ latitude: 31.6103, longitude: 35.0711, accuracy: 20 });
+  test("without consent nothing leaves the device; the farmer types the village name", async ({ page, context }) => {
     const calls = await mockGeoServices(page);
-    await go(page, "/location/");
-    await page.getByRole("button", { name: "حدّد موقعي بدقة" }).click();
-    await expect(page.getByTestId("location-coords")).toHaveText("31.61030, 35.07110");
-    await expect(page.getByText("وافق على الخدمات الخارجية لمعرفة اسم القرية أو الحي.")).toBeVisible();
-    await expect(page.getByText(/لم يتوفر ارتفاع موثوق/)).toBeVisible();
-    await page.getByRole("tab", { name: "الخريطة" }).click();
-    await expect(page.getByText("الخريطة تحتاج موافقتك")).toBeVisible();
-    await page.getByRole("tab", { name: /موقعي الحالي/ }).click();
-    await page.getByRole("button", { name: "تأكيد الموقع وحفظه" }).click();
+    await locateWithGps(page, context, 20);
+    await page.getByRole("button", { name: "لا، سأكتب الاسم بنفسي" }).click();
+    await expect(page.getByRole("heading", { name: "لم نتمكن من معرفة اسم القرية بدقة" })).toBeVisible();
+    await page.getByRole("textbox", { name: "اسم قريتك" }).fill("بيت أمر");
+    await page.getByRole("button", { name: "احفظ الموقع بهذا الاسم" }).click();
+    await expect(page.getByTestId("location-saved-name")).toHaveText("بيت أمر");
+    expect(await savedInStorage(page)).toMatchObject({ source: "gps", latitude: 31.6103, labelSource: "manual", externalConsent: false });
     await go(page, "/weather/");
     await expect(page.getByText("الطقس يحتاج موافقتك")).toBeVisible();
     await page.waitForTimeout(800);
     expect(calls).toEqual({ nominatim: [], elevation: [], forecast: [], tiles: 0 });
   });
 
-  test("low accuracy is reported clearly", async ({ page, context }) => {
-    await context.grantPermissions(["geolocation"]);
-    await context.setGeolocation({ latitude: 31.9, longitude: 35.2, accuracy: 3500 });
-    await mockGeoServices(page);
+  test("correcting only the name keeps the GPS point", async ({ page, context }) => {
+    await mockGeoServices(page, { reverseAddress: { town: "حلحول", state_district: "محافظة الخليل", country_code: "ps" } });
+    await locateWithGps(page, context);
+    await page.getByRole("button", { name: "نعم، اعرف اسم قريتي" }).click();
+    await expect(page.getByTestId("location-label")).toHaveText("حلحول");
+    // A town, not a village: the farmer is told how to pick a nearby village.
+    await expect(page.getByText(/إن كانت أرضك في قرية صغيرة قرب حلحول/)).toBeVisible();
+    await page.getByRole("button", { name: "لا، غيّر القرية" }).click();
+    await page.getByRole("textbox", { name: "الاسم الصحيح لقريتك" }).fill("بيت أمر");
+    await page.getByRole("button", { name: "احفظ بهذا الاسم" }).click();
+    await expect(page.getByTestId("location-saved-name")).toHaveText("بيت أمر");
+    expect(await savedInStorage(page)).toMatchObject({ source: "gps", latitude: 31.6103, longitude: 35.0711, accuracyM: 12, label: "بيت أمر", labelSource: "manual" });
+  });
+
+  test("land in another village: search by name, same name in two governorates (سعير)", async ({ page, context }) => {
+    const calls = await mockGeoServices(page, {
+      searchResults: [
+        { lat: "31.5772", lon: "35.1617", display_name: "سعير، محافظة الخليل، الضفة الغربية، فلسطين", address: { village: "سعير", state_district: "محافظة الخليل", country_code: "ps" } },
+        { lat: "32.4200", lon: "35.2100", display_name: "سعير، محافظة جنين، الضفة الغربية، فلسطين", address: { village: "سعير", state_district: "محافظة جنين", country_code: "ps" } },
+      ],
+    });
+    await locateWithGps(page, context);
+    await page.getByRole("button", { name: "نعم، اعرف اسم قريتي" }).click();
+    await page.getByRole("button", { name: "لا، غيّر القرية" }).click();
+    await page.getByRole("button", { name: "ابحث عن قريتك" }).click();
+    await page.getByRole("textbox", { name: "اسم القرية أو البلدة" }).fill("سعير");
+    // No request while typing — only on submit.
+    expect(calls.nominatim.filter((u) => u.includes("/search"))).toHaveLength(0);
+    await page.getByRole("button", { name: "بحث", exact: true }).click();
+    await expect(page.getByText(/انتبه للمحافظة إن تكرر الاسم/)).toBeVisible();
+    await page.getByRole("button", { name: /سعير، محافظة الخليل/ }).click();
+    await expect(page.getByTestId("location-label")).toHaveText("سعير");
+    await page.getByRole("button", { name: "نعم، احفظ الموقع" }).click();
+    expect(await savedInStorage(page)).toMatchObject({ source: "search", latitude: 31.5772, longitude: 35.1617, accuracyM: null, label: "سعير، محافظة الخليل", labelSource: "search", countryCode: "PS" });
+    expect(calls.nominatim.filter((u) => u.includes("/search"))).toHaveLength(1);
+  });
+
+  test("search without GPS: Jericho (Jordan Valley) and Gaza (coast)", async ({ page }) => {
+    await mockGeoServices(page, {
+      elevation: -250,
+      searchResults: [{ lat: "31.8570", lon: "35.4600", display_name: "أريحا، محافظة أريحا والأغوار، فلسطين", address: { city: "أريحا", state_district: "محافظة أريحا والأغوار", country_code: "ps" } }],
+    });
     await go(page, "/location/");
-    await page.getByRole("button", { name: "حدّد موقعي بدقة" }).click();
-    await expect(page.getByText("دقة ضعيفة جدًا")).toBeVisible({ timeout: 40_000 });
-    await expect(page.getByText("± 3.5 كم").first()).toBeVisible();
-    await expect(page.getByText("الدقة ضعيفة", { exact: true })).toBeVisible();
-    await expect(page.getByRole("button", { name: "صحّح الموقع على الخريطة" })).toBeVisible();
+    await page.getByRole("button", { name: "أو ابحث عن قريتك بالاسم" }).click();
+    await page.getByRole("textbox", { name: "اسم القرية أو البلدة" }).fill("أريحا");
+    await page.getByRole("button", { name: "بحث", exact: true }).click();
+    await page.getByRole("button", { name: /أريحا، محافظة أريحا والأغوار/ }).click();
+    await page.getByRole("button", { name: "نعم، احفظ الموقع" }).click();
+    expect(await savedInStorage(page)).toMatchObject({ source: "search", zone: "jordan_valley", countryCode: "PS" });
+
+    const gaza = await page.context().newPage();
+    await mockGeoServices(gaza, {
+      elevation: 20,
+      searchResults: [{ lat: "31.5017", lon: "34.4668", display_name: "غزة، محافظة غزة، فلسطين", address: { city: "غزة", state_district: "محافظة غزة", country_code: "ps" } }],
+    });
+    await go(gaza, "/location/");
+    // Same browser: the Jericho location is already saved, so change it.
+    await gaza.getByRole("button", { name: "تغيير" }).click();
+    await gaza.getByRole("button", { name: "أو ابحث عن قريتك بالاسم" }).click();
+    await gaza.getByRole("textbox", { name: "اسم القرية أو البلدة" }).fill("غزة");
+    await gaza.getByRole("button", { name: "بحث", exact: true }).click();
+    await gaza.getByRole("button", { name: /غزة، محافظة غزة/ }).first().click();
+    await gaza.getByRole("button", { name: "نعم، احفظ الموقع" }).click();
+    expect(await savedInStorage(gaza)).toMatchObject({ zone: "coastal", countryCode: "PS" });
+  });
+
+  test("the map does not recognise a village name", async ({ page, context }) => {
+    await mockGeoServices(page, { reverseAddress: { state_district: "محافظة الخليل", country_code: "ps" } });
+    await locateWithGps(page, context);
+    await page.getByRole("button", { name: "نعم، اعرف اسم قريتي" }).click();
+    await expect(page.getByRole("heading", { name: "لم نتمكن من معرفة اسم القرية بدقة" })).toBeVisible();
+    await expect(page.getByTestId("name-unknown-reason")).toContainText("محافظة الخليل");
+    // The nearest listed city is never offered as the village name.
+    await expect(page.getByTestId("location-label")).toHaveCount(0);
+  });
+
+  test("no internet: the GPS point is kept and the name can be typed", async ({ page, context }) => {
+    await mockGeoServices(page, { nominatimOffline: true });
+    await locateWithGps(page, context);
+    await page.getByRole("button", { name: "نعم، اعرف اسم قريتي" }).click();
+    await expect(page.getByTestId("name-unknown-reason")).toContainText("لا يوجد اتصال بالإنترنت");
+    await page.getByRole("textbox", { name: "اسم قريتك" }).fill("بيت أمر");
+    await page.getByRole("button", { name: "احفظ الموقع بهذا الاسم" }).click();
+    expect(await savedInStorage(page)).toMatchObject({ source: "gps", latitude: 31.6103, label: "بيت أمر" });
+  });
+
+  test("near the Jordanian border the country is not guessed", async ({ page, context }) => {
+    await mockGeoServices(page, { reverseAddress: { village: "قرية حدودية", country_code: "il" } });
+    await locateWithGps(page, context, 15, { latitude: 31.873, longitude: 35.54 });
+    await page.getByRole("button", { name: "نعم، اعرف اسم قريتي" }).click();
+    await expect(page.getByText("لم نتأكد من البلد")).toBeVisible();
+    await page.getByRole("button", { name: "نعم، احفظ الموقع" }).click();
+    expect((await savedInStorage(page)).countryCode).toBeNull();
+    await expect(page.getByText(/لم نتأكد من البلد لهذا الموقع/)).toBeVisible();
+    // The farmer can confirm the country explicitly.
+    await page.getByRole("button", { name: "تغيير" }).click();
+    await page.getByRole("button", { name: "حدد موقعي تلقائيًا" }).click();
+    await page.getByRole("button", { name: "فلسطين" }).click();
+    await expect(page.getByText("لم نتأكد من البلد")).toHaveCount(0);
+    await page.getByRole("button", { name: "نعم، احفظ الموقع" }).click();
+    expect((await savedInStorage(page)).countryCode).toBe("PS");
+  });
+
+  test("low GPS accuracy is reported honestly", async ({ page, context }) => {
+    await mockGeoServices(page);
+    await locateWithGps(page, context, 3500, { latitude: 31.9, longitude: 35.2 });
+    await page.getByRole("button", { name: "نعم، اعرف اسم قريتي" }).click({ timeout: 40_000 });
+    await expect(page.getByText("الموقع تقريبي")).toBeVisible();
+    await page.locator("summary", { hasText: "خيارات متقدمة" }).click();
+    await expect(page.getByTestId("location-accuracy")).toHaveText("الدقة كما أبلغ عنها جهازك: ± 3.5 كم");
   });
 
   for (const [code, text] of [
@@ -73,49 +191,49 @@ test.describe("precise location", () => {
     [2, "تعذّر تحديد موقعك الآن"],
     [3, "استغرق تحديد الموقع وقتًا أطول"],
   ] as const) {
-    test(`geolocation error ${code} shows an Arabic message`, async ({ page }) => {
+    test(`geolocation error ${code}: Arabic message and a search alternative`, async ({ page }) => {
       await failGeolocation(page, code);
       await go(page, "/location/");
-      await page.getByRole("button", { name: "حدّد موقعي بدقة" }).click();
+      await page.getByRole("button", { name: "حدد موقعي تلقائيًا" }).click();
       await expect(page.getByText("تعذّر تحديد الموقع")).toBeVisible();
       await expect(page.getByText(new RegExp(text))).toBeVisible();
+      await page.getByRole("button", { name: "ابحث عن قريتك بالاسم", exact: true }).click();
+      await expect(page.getByRole("heading", { name: "ابحث عن قريتك" })).toBeVisible();
     });
   }
 
-  test("manual selection on the map and by search", async ({ page, isMobile }) => {
+  test("advanced options: town list (offline) and the map", async ({ page, isMobile }) => {
     const calls = await mockGeoServices(page, { elevation: 420 });
     await go(page, "/location/");
-    await page.getByRole("checkbox", { name: /أوافق على استخدام خدمات الخرائط والطقس/ }).check();
-    await page.getByRole("tab", { name: "الخريطة" }).click();
+    await page.locator("summary", { hasText: "خيارات متقدمة" }).click();
+    await page.getByLabel("المدينة").selectOption("ps-hebron");
+    await expect(page.getByTestId("location-label")).toHaveText("الخليل");
+    await page.getByRole("radio", { name: /سهلي داخلي/ }).check();
+    await page.getByRole("button", { name: "نعم، احفظ الموقع" }).click();
+    expect(await savedInStorage(page)).toMatchObject({ source: "list", labelSource: "list", zone: "inland_plain", zoneSource: "manual", countryCode: "PS" });
+    expect(calls.nominatim).toHaveLength(0);
+
+    await page.getByRole("button", { name: "تغيير" }).click();
+    await page.locator("summary", { hasText: "خيارات متقدمة" }).click();
+    // Agreeing replaces the box with the map button.
+    await page.getByRole("checkbox", { name: /أوافق على تحميل الخريطة/ }).click();
+    await page.getByRole("button", { name: "افتح الخريطة" }).click();
     const map = page.getByRole("application", { name: /خريطة تفاعلية/ });
     await expect(map).toBeVisible();
     const box = (await map.boundingBox())!;
     const position = { x: Math.round(box.width * 0.3), y: Math.round(box.height * 0.4) };
-    // Phones tap, computers click: both must move the pin.
     if (isMobile) await map.tap({ position });
     else await map.click({ position });
-    await expect(page.getByText("المصدر: اختيار يدوي على الخريطة")).toBeVisible();
     expect(calls.tiles).toBeGreaterThan(0);
-    await expect(page.getByText(/© مساهمو OpenStreetMap/).first()).toBeVisible();
-
-    await page.getByRole("tab", { name: /بحث عن قرية/ }).click();
-    await page.getByRole("textbox", { name: "اسم القرية أو البلدة أو المكان" }).fill("سبسطية");
-    // No request while typing (no autocomplete) — only on submit.
-    expect(calls.nominatim.filter((u) => u.includes("/search"))).toHaveLength(0);
-    await page.getByRole("button", { name: "بحث", exact: true }).click();
-    await page.getByRole("button", { name: /سبسطية، محافظة نابلس/ }).click();
-    await expect(page.getByTestId("location-label")).toHaveText("سبسطية، محافظة نابلس");
-    await expect(page.getByTestId("location-coords")).toHaveText("32.27630, 35.19500");
-    expect(calls.nominatim.filter((u) => u.includes("/search"))).toHaveLength(1);
+    await page.getByRole("button", { name: "استخدم هذا المكان" }).click();
+    await expect(page.getByTestId("location-label")).toHaveText("بيت أمر");
   });
 
-  test("manual climate-zone correction is kept", async ({ page }) => {
+  test("a location saved by the previous version opens directly", async ({ page }) => {
+    await seedLocation(page, { source: "gps", latitude: 31.61, longitude: 35.07, label: "بيت أمر، محافظة الخليل", regionId: "ps-hebron", zone: "highland" });
     await go(page, "/location/");
-    await page.getByRole("tab", { name: "قائمة المدن" }).click();
-    await page.getByLabel("المدينة").selectOption("ps-hebron");
-    await page.getByRole("radio", { name: /سهلي داخلي/ }).check();
-    await page.getByRole("button", { name: "تأكيد الموقع وحفظه" }).click();
-    await expect(page.getByText("حددتها يدويًا")).toBeVisible();
+    await expect(page.getByTestId("location-saved-name")).toHaveText("بيت أمر، محافظة الخليل");
+    await expect(page.getByRole("link", { name: /اعرف ماذا تزرع الآن/ })).toBeVisible();
   });
 });
 

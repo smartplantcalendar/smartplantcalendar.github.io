@@ -5,9 +5,9 @@ const HEBRON = { latitude: 31.5326, longitude: 35.0998, label: "الخليل", r
 
 /** Planner step 1 without a saved location: pick a city from the list and confirm. */
 async function chooseCityInPlanner(page: Page, cityId: string) {
-  await page.getByRole("tab", { name: "قائمة المدن" }).click();
+  await page.locator("summary", { hasText: "خيارات متقدمة" }).click();
   await page.getByLabel("المدينة").selectOption(cityId);
-  await page.getByRole("button", { name: "تأكيد الموقع وحفظه" }).click();
+  await page.getByRole("button", { name: "نعم، احفظ الموقع" }).click();
 }
 
 /**
@@ -203,7 +203,7 @@ test("every page opens directly and survives a browser refresh under the sub-pat
     ["/calendar/", /رزنامتي الزراعية/],
     ["/tasks/", /المهام والتذكيرات/],
     ["/weather/", /طقس منطقتك/],
-    ["/location/", /حدّد موقع أرضك بدقة/],
+    ["/location/", /وين أرضك؟/],
     ["/recommendations/", /ماذا أزرع الآن في منطقتي؟/],
     ["/privacy/", /سياسة الخصوصية/],
     ["/admin/crops/edit/", /لوحة الإدارة تتطلب/],

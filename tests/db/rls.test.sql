@@ -81,8 +81,23 @@ end $$;
 -- A can update allowed profile columns, including the confirmed location.
 update public.profiles set full_name = 'اسم جديد', region_id = 'ps-gaza',
   latitude = 31.6103, longitude = 35.0711, location_label = 'قرية تجريبية', location_source = 'gps',
-  location_accuracy_m = 12, elevation_m = 870, external_geo_consent = true, location_confirmed_at = now()
+  location_accuracy_m = 12, elevation_m = 870, external_geo_consent = true, location_confirmed_at = now(),
+  location_country = 'PS', location_label_source = 'manual'
   where id = auth.uid();
+
+-- Only supported countries and known name sources are accepted.
+do $$ begin
+  begin
+    update public.profiles set location_country = 'XX' where id = auth.uid();
+    raise exception 'invalid location_country accepted';
+  exception when check_violation then null;
+  end;
+  begin
+    update public.profiles set location_label_source = 'guess' where id = auth.uid();
+    raise exception 'invalid location_label_source accepted';
+  exception when check_violation then null;
+  end;
+end $$;
 
 -- A greenhouse garden is accepted.
 insert into public.gardens (name, space_type, zone) values ('بيتي المحمي', 'greenhouse', 'highland');

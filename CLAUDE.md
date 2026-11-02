@@ -24,6 +24,7 @@ Arabic-first agricultural planning platform (Palestine / Levant). Next.js 16 App
 - `src/components/providers/app-data-provider.tsx` single client data source; switches between guest (localStorage) and signed-in (`src/data-access`, Supabase from the browser).
 - `src/data-access/` browser data access (user + admin) through Supabase/RLS; `src/services/` build-time reads of public content.
 - `src/lib/weather-client.ts` calls Open-Meteo directly from the browser (keyless).
+- Location UI: `src/components/location/location-picker.tsx` (farmer flow: one button → consent → «هل هذه قريتك؟»; name and coordinates are independent) + `advanced-options.tsx` (map, town list, coordinates, zone, country).
 - `src/domain/geo.ts` (zone rules, distances, accuracy), `src/domain/location.ts` (SavedLocation v2 + consent), `src/domain/recommendations.ts` (what-to-plant-now rules); browser geo clients in `src/lib/geo/`.
 - Crop data: `src/data/crops.ts` (12 detailed crops + `SEED_CROPS`), `src/data/crop-catalogue.ts` (name-only `incomplete` crops: no windows, never guessed), `src/data/crop-sources.ts` (references; windows need a `used` source). Search/status: `src/domain/crop-search.ts` (typo-tolerant, synonyms), `simplePlantingStatus` in `src/domain/planting-windows.ts`. See docs/CROP_DATA.md; `npm run crops:report` prints coverage.
 - `supabase/migrations/` schema + RLS; `supabase/seed.sql` is **generated** from `src/data` by `npm run db:seed:generate` — edit the TS data, then regenerate.
