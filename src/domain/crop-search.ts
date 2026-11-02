@@ -146,7 +146,7 @@ export function searchCrops<T extends SearchableCrop>(crops: T[], query: string,
  * their own task rules get general tasks from the plan generator).
  */
 export function isPlannable(crop: Pick<Crop, "windows" | "dataStatus">): boolean {
-  return crop.dataStatus !== "incomplete" && crop.windows.length > 0;
+  return crop.dataStatus !== "incomplete" && crop.windows.some((w) => !w.optional);
 }
 
 /**
@@ -155,5 +155,16 @@ export function isPlannable(crop: Pick<Crop, "windows" | "dataStatus">): boolean
  * that the catalogue has 100+ crops.
  */
 export function listCrop(crop: Crop): Crop {
-  return { ...crop, summary: "", wateringSummary: "", sourceNote: "", growthNote: undefined, templates: [], guide: [] };
+  return {
+    ...crop,
+    summary: "",
+    wateringSummary: "",
+    sourceNote: "",
+    growthNote: undefined,
+    templates: [],
+    guide: [],
+    // Flowering/harvest seasons are only shown on the crop page.
+    phases: [],
+    estimate: crop.estimate ? { ...crop.estimate, note: "", contextUrls: [], reviewNotes: [] } : crop.estimate,
+  };
 }

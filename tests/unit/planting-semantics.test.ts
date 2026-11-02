@@ -92,13 +92,18 @@ describe("the main date means planting in the final place", () => {
     expect(plan.expectedHarvestStart).toBe("2026-06-13");
   });
 
-  it("narcissus: bulbs; no planting date until a source documents it", () => {
+  it("narcissus: bulbs; only ESTIMATED dates, for Palestine only", () => {
     const narcissus = crop("narcissus");
     expect(narcissus.category).toBe("ornamental");
     expect(primaryMethod(narcissus)).toBe("bulbs");
     expect(plantingTitle(narcissus, primaryMethod(narcissus))).toBe("موعد زراعة أبصال النرجس");
-    expect(narcissus.windows).toEqual([]);
+    expect(narcissus.dataStatus).toBe("estimated");
+    expect(narcissus.windows.every((w) => w.confidence === "estimated" && w.method === "bulbs")).toBe(true);
+    // Unknown country: no date. Palestine: an estimate, labelled as such.
     expect(simplePlantingStatus(narcissus, "highland", "2026-10-10").kind).toBe("no_data");
+    expect(simplePlantingStatus(narcissus, "highland", "2026-10-10", "PS")).toMatchObject({ kind: "now", estimated: true });
+    // Flowering is an ornamental phase; there is no harvest.
+    expect(narcissus.zoneEstimates?.[0].notApplicable).toContain("harvest");
   });
 
   it("the default method is the most common way to plant in the ground, nursery excluded", () => {

@@ -6,8 +6,8 @@
  */
 import { addDays, monthOf } from "@/lib/dates";
 import { formatShortDate } from "@/lib/format";
-import { CONTAINER_SPACES, GREENHOUSE_NOTICE, SPACES_WITHOUT_RULES, SPACE_TYPE_LABELS } from "./labels";
-import { evaluateWindowFit, isGeneralOnly, mainWindowsForZone, primaryMethod, type WindowFit } from "./planting-windows";
+import { CONTAINER_SPACES, ESTIMATE_NOTICE, GREENHOUSE_NOTICE, SPACES_WITHOUT_RULES, SPACE_TYPE_LABELS, ZONE_SUITABILITY_LABELS } from "./labels";
+import { evaluateWindowFit, isEstimatedOnly, isGeneralOnly, mainWindowsForZone, primaryMethod, zoneEstimateFor, type WindowFit } from "./planting-windows";
 import type { ClimateZone, Crop, ISODate, PlantingMethod, SpaceType, TaskTemplate, TaskType } from "./types";
 
 export interface PlanInput {
@@ -151,6 +151,7 @@ export function generatePlan(input: PlanInput): GeneratedPlan {
   let expectedHarvestStart: ISODate | null = null;
   let expectedHarvestEnd: ISODate | null = null;
   let isTentative = crop.dataStatus !== "reviewed";
+  const zoneEstimate = zoneEstimateFor(crop, zone, input.country);
 
   if (crop.growthDaysMin != null && crop.growthDaysMax != null) {
     expectedHarvestStart = addDays(plantedOn, crop.growthDaysMin);
@@ -159,16 +160,36 @@ export function generatePlan(input: PlanInput): GeneratedPlan {
     if (harvest) {
       harvest.description = `${harvest.description} نافذة الحصاد التقديرية: من ${formatShortDate(expectedHarvestStart)} إلى ${formatShortDate(expectedHarvestEnd)}.`;
     }
+  } else if (zoneEstimate?.daysToFirstHarvest != null) {
+    // Estimated days to the first harvest for the zone: one tentative date,
+    // labelled as an estimate (never a firm harvest date).
+    isTentative = true;
+    expectedHarvestStart = addDays(plantedOn, zoneEstimate.daysToFirstHarvest);
+    expectedHarvestEnd = expectedHarvestStart;
+    tasks.push({
+      templateKey: "estimate-first-harvest",
+      type: "harvest",
+      title: `بداية القطف التقديرية لـ${crop.name}`,
+      description: `تقدير عام: أول قطف بعد نحو ${zoneEstimate.daysToFirstHarvest} يومًا من الزراعة في الأرض. ${ESTIMATE_NOTICE} راقب نضج النبات بنفسك.`,
+      dueDate: expectedHarvestStart,
+    });
+    tasks.sort((a, b) => (a.dueDate < b.dueDate ? -1 : a.dueDate > b.dueDate ? 1 : 0));
   } else {
     isTentative = true;
     warnings.push(
-      crop.lifeCycle === "perennial"
+      zoneEstimate?.yearsToFirstYield != null
+        ? `تقدير عام: أول إنتاج بعد نحو ${zoneEstimate.yearsToFirstYield} سنوات من الغرس. تركز الخطة على العناية في السنة الأولى دون موعد حصاد محدد.`
+        : crop.lifeCycle === "perennial"
         ? "هذا محصول معمّر ولا تتوفر لدينا مدة موثوقة حتى أول إنتاج، لذلك تركز الخطة على العناية في السنة الأولى دون موعد حصاد محدد."
         : "لا تتوفر مدة نمو موثوقة لهذا المحصول، لذلك لم نحدد موعد حصاد متوقع.",
     );
   }
 
   const windowFit = evaluateWindowFit(crop, zone, monthOf(plantedOn), input.country);
+  if (isEstimatedOnly(mainWindowsForZone(crop, zone, input.country))) {
+    warnings.push(`${ESTIMATE_NOTICE} مواعيد هذه الخطة تقديرية وليست موثّقة علميًا؛ تأكد من الإرشاد الزراعي المحلي.`);
+    if (zoneEstimate && zoneEstimate.suitability !== "possible") warnings.push(`تقدير لمنطقتك: ${ZONE_SUITABILITY_LABELS[zoneEstimate.suitability]}.`);
+  }
   if (isGeneralOnly(mainWindowsForZone(crop, zone, input.country))) {
     warnings.push("مواعيد هذا المحصول عامة على مستوى البلد وليست خاصة بمنطقتك المناخية؛ تأكد من الإرشاد الزراعي المحلي.");
   }

@@ -10,13 +10,13 @@ import { ambiguityFor } from "@/domain/ambiguous-names";
 import { buildCropIndex, normalizeArabic, searchCropIndex } from "@/domain/crop-search";
 import { countryOfLocation } from "@/domain/location";
 import { METHOD_SHORT_LABELS } from "@/domain/labels";
-import { describeSimpleStatus, mainWindowsForZone, simplePlantingStatus, type SimpleStatusKind } from "@/domain/planting-windows";
+import { describeSimpleStatus, isEstimatedOnly, mainWindowsForZone, simplePlantingStatus, type SimpleStatusKind } from "@/domain/planting-windows";
 import type { ClimateZone, Crop } from "@/domain/types";
 import { formatMonthRange } from "@/lib/format";
 import { cn } from "@/lib/utils";
 
 /** The fields the search needs; keeps the page payload small. */
-export type SearchCrop = Pick<Crop, "slug" | "name" | "otherNames" | "scientificName" | "imageUrl" | "imageAlt" | "windows" | "propagation" | "primaryMethod">;
+export type SearchCrop = Pick<Crop, "slug" | "name" | "otherNames" | "scientificName" | "imageUrl" | "imageAlt" | "windows" | "propagation" | "primaryMethod" | "zoneEstimates">;
 
 const MAX_RESULTS = 6;
 
@@ -26,7 +26,7 @@ function windowText(crop: SearchCrop, zone: ClimateZone, country: string | null)
   const windows = mainWindowsForZone(crop, zone, country);
   if (!windows.length) return null;
   const ranges = [...new Set(windows.map((w) => formatMonthRange(w.startMonth, w.endMonth)))];
-  return `${METHOD_SHORT_LABELS[windows[0].method]}: ${ranges.join("، ")}`;
+  return `${METHOD_SHORT_LABELS[windows[0].method]}: ${ranges.join("، ")}${isEstimatedOnly(windows) ? " (تقديري)" : ""}`;
 }
 
 const STATUS_TONE: Record<SimpleStatusKind, string> = {
@@ -203,7 +203,7 @@ export function CropSearch({ crops, ref }: { crops: SearchCrop[]; ref?: React.Re
                     {hint ? <p className="text-sm font-semibold text-foreground">{hint}</p> : null}
                     {status ? (
                       <>
-                        <span className={cn("inline-flex rounded-full px-2 py-0.5 text-xs font-bold", status.general && status.kind === "now" ? "bg-warning-soft text-warning" : STATUS_TONE[status.kind])}>
+                        <span className={cn("inline-flex rounded-full px-2 py-0.5 text-xs font-bold", (status.general || status.estimated) && status.kind === "now" ? "bg-warning-soft text-warning" : STATUS_TONE[status.kind])}>
                           {describeSimpleStatus(status).title}
                         </span>
                         {months ? <p className="text-sm text-muted-foreground">{months}</p> : null}

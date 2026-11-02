@@ -38,10 +38,10 @@ function NowCard({ r, today }: { r: Recommendation; today: string }) {
             <span
               className={cn(
                 "rounded-full px-2 py-0.5 text-xs font-bold",
-                protect || r.general ? "bg-warning-soft text-warning" : "bg-brand-100 text-brand-700",
+                protect || r.general || r.estimated ? "bg-warning-soft text-warning" : "bg-brand-100 text-brand-700",
               )}
             >
-              {r.general ? "موعد عام" : protect ? "يحتاج حماية" : "مناسب الآن"}
+              {r.estimated ? "موعد تقديري" : r.general ? "موعد عام" : protect ? "يحتاج حماية" : "مناسب الآن"}
             </span>
           </p>
           <p className="text-sm text-muted-foreground">

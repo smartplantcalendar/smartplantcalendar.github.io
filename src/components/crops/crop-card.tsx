@@ -34,6 +34,8 @@ export function CropCard({ crop, seasonText, className }: { crop: Crop; seasonTe
           </div>
           {crop.dataStatus === "incomplete" ? (
             <Badge variant="outline">{DATA_STATUS_LABELS.incomplete}</Badge>
+          ) : crop.dataStatus === "estimated" ? (
+            <Badge variant="warning">{DATA_STATUS_LABELS.estimated}</Badge>
           ) : crop.difficulty ? (
             <Badge variant={difficultyVariant[crop.difficulty]}>{DIFFICULTY_LABELS[crop.difficulty]}</Badge>
           ) : null}
@@ -55,14 +57,14 @@ export function CropCard({ crop, seasonText, className }: { crop: Crop; seasonTe
               <dd>احتياج ري {WATER_LABELS[crop.water]}</dd>
             </div>
           ) : null}
-          {crop.growthDaysMin != null || crop.dataStatus !== "incomplete" ? (
+          {crop.growthDaysMin != null || crop.dataStatus === "preliminary" || crop.dataStatus === "reviewed" ? (
             <div className="flex items-center gap-2">
               <Clock3 className="size-4 text-subtle-foreground" aria-hidden />
               <dt className="sr-only">مدة النمو</dt>
               <dd>{growthLabel(crop)}</dd>
             </div>
           ) : null}
-          {crop.dataStatus === "incomplete" && fieldMethods(crop).length ? (
+          {(crop.dataStatus === "incomplete" || crop.dataStatus === "estimated") && fieldMethods(crop).length ? (
             <div className="flex items-center gap-2">
               <Sprout className="size-4 text-brand-600" aria-hidden />
               <dt className="sr-only">طرق الزراعة في الأرض</dt>

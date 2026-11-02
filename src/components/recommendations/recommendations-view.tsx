@@ -70,17 +70,24 @@ export function RecommendationCard({ r, space }: { r: Recommendation; space: Spa
         <div className="min-w-0 flex-1">
           <div className="flex flex-wrap items-center gap-2">
             <h3 className="text-lg font-bold">{r.crop.name}</h3>
-            {r.general && r.status === "now" ? (
+            {r.estimated && r.status === "now" ? (
+              <Badge variant="warning">ضمن الموعد التقديري</Badge>
+            ) : r.general && r.status === "now" ? (
               <Badge variant="warning">ضمن الموعد العام</Badge>
             ) : (
               <Badge variant={meta.variant}>{meta.badge}</Badge>
             )}
             {r.general ? <Badge variant="outline">موعد عام لا يخص منطقتك</Badge> : null}
+            {r.estimated ? (
+              <Badge variant="outline" data-testid="rec-estimated">
+                مواعيد تقديرية
+              </Badge>
+            ) : null}
           </div>
           {r.method ? <p className="text-sm text-muted-foreground">الطريقة المقترحة: {METHOD_LABELS[r.method]}</p> : null}
           {r.windows.length ? (
             <p className="text-sm">
-              <span className="text-muted-foreground">{r.general ? "فترات الزراعة العامة المسجلة: " : "فترات الزراعة المسجلة لمنطقتك: "}</span>
+              <span className="text-muted-foreground">{r.estimated ? "فترات الزراعة التقديرية لمنطقتك: " : r.general ? "فترات الزراعة العامة المسجلة: " : "فترات الزراعة المسجلة لمنطقتك: "}</span>
               <span className="font-semibold text-brand-700">
                 {r.windows.map((w) => `${formatMonthRange(w.startMonth, w.endMonth)} (${METHOD_LABELS[w.method]})`).join("، ")}
               </span>

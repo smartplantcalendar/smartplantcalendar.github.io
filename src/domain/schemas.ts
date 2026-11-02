@@ -192,6 +192,15 @@ export const adminWindowSchema = z.object({
   /** Kept from the loaded window so an admin save does not drop the reference. */
   sourceId: z.union([z.string().regex(/^[a-z0-9-]{2,60}$/), z.literal("")]).optional().default(""),
   sourceDetail: z.string().trim().max(600).optional().default(""),
+  /** Kept from the loaded window: an imported estimate stays an estimate unless an admin changes it. */
+  confidence: z.enum(["documented", "estimated"]).optional().default("documented"),
+  optional: z.boolean().optional().default(false),
+}).refine((w) => w.confidence === "documented" || (w.zone !== null && w.countryCode !== "" && w.method !== "nursery_sowing"), {
+  error: "الموعد التقديري يجب أن يحدد المنطقة والبلد وأن يكون زراعة في الأرض.",
+  path: ["confidence"],
+}).refine((w) => !w.optional || w.confidence === "estimated", {
+  error: "العروة الإضافية الاختيارية لا تكون إلا تقديرية.",
+  path: ["optional"],
 });
 
 export const adminTemplateSchema = z

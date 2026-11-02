@@ -28,7 +28,7 @@ export default async function PlannerPage() {
       <StorageNotice />
       <Suspense fallback={<Skeleton className="h-[32rem] w-full rounded-2xl" />}>
         <PlannerWizard
-          crops={crops.filter(isPlannable).map((c) => ({ ...c, guide: [], summary: "", sourceNote: "", wateringSummary: "" }))}
+          crops={crops.filter(isPlannable).map((c) => ({ ...c, guide: [], summary: "", sourceNote: "", wateringSummary: "", phases: [] }))}
           zoneOverrides={zoneOverrides}
         />
       </Suspense>

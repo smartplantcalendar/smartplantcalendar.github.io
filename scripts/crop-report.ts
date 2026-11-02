@@ -5,7 +5,7 @@
 import { CROP_SOURCES } from "../src/data/crop-sources";
 import { SEED_CROPS } from "../src/data/crops";
 import { CATEGORY_LABELS, CLIMATE_ZONE_LABELS, DATA_STATUS_LABELS } from "../src/domain/labels";
-import { windowsForZone } from "../src/domain/planting-windows";
+import { isEstimatedOnly, windowsForZone } from "../src/domain/planting-windows";
 import { CLIMATE_ZONES, CROP_CATEGORIES, DATA_STATUSES, type PlantingWindow } from "../src/domain/types";
 
 const total = SEED_CROPS.length;
@@ -33,7 +33,8 @@ for (const z of CLIMATE_ZONES) {
     const ws = windowsForZone(c, z, "PS");
     return ws.length > 0 && ws.every((w) => w.zone === null) && ws.some(sourced);
   }).length;
-  console.log(`  ${CLIMATE_ZONE_LABELS[z]}: أي موعد ${anyN} (${pct(anyN)}) · موثّق لهذه المنطقة ${specific} (${pct(specific)}) · موثّق عام لفلسطين فقط ${general} (${pct(general)})`);
+  const estimatedN = SEED_CROPS.filter((c) => isEstimatedOnly(windowsForZone(c, z, "PS"))).length;
+  console.log(`  ${CLIMATE_ZONE_LABELS[z]}: أي موعد ${anyN} (${pct(anyN)}) · موثّق لهذه المنطقة ${specific} (${pct(specific)}) · موثّق عام لفلسطين فقط ${general} (${pct(general)}) · تقديري فقط ${estimatedN} (${pct(estimatedN)})`);
 }
 console.log("التغطية لموقع خارج فلسطين (الأردن مثلًا): المواعيد الفلسطينية لا تُطبّق، فتبقى المحاصيل الموثّقة فلسطينيًا بلا موعد هناك:");
 for (const z of CLIMATE_ZONES) {

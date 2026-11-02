@@ -12,6 +12,8 @@
     "test:e2e": "playwright test",
     "db:seed:generate": "tsx scripts/generate-seed.ts",
     "crops:report": "tsx scripts/crop-report.ts",
+    "estimates:import": "tsx scripts/import-estimates.ts",
+    "estimates:check": "tsx scripts/import-estimates.ts --check",
     "test:db": "bash tests/db/run.sh",
     "build:pages": "NEXT_PUBLIC_BASE_PATH= NEXT_PUBLIC_SITE_URL=https://smartplantcalendar.github.io next build",
     "serve:pages": "node scripts/serve-static.mjs 3200",
