@@ -455,6 +455,8 @@ const locationSchema = z.object({
   timezone: z.string().max(64),
   externalConsent: z.boolean(),
   confirmedAt: z.string().max(40),
+  labelSource: z.enum(["osm", "search", "list", "manual", "none"]).optional(),
+  countryCode: z.enum(["PS", "JO", "LB", "SY"]).nullable().optional(),
 });
 
 export async function saveLocationAction(raw: unknown): Promise<ActionResult<null>> {
@@ -462,7 +464,7 @@ export async function saveLocationAction(raw: unknown): Promise<ActionResult<nul
   if ("error" in ctx) return { ok: false, error: ctx.error ?? GENERIC };
   const patch =
     raw === null
-      ? { latitude: null, longitude: null, location_label: null, location_source: null, location_accuracy_m: null, elevation_m: null, external_geo_consent: false, location_confirmed_at: null }
+      ? { latitude: null, longitude: null, location_label: null, location_source: null, location_accuracy_m: null, elevation_m: null, external_geo_consent: false, location_confirmed_at: null, location_country: null, location_label_source: null }
       : (() => {
           const parsed = locationSchema.safeParse(raw);
           if (!parsed.success) return null;
@@ -479,6 +481,8 @@ export async function saveLocationAction(raw: unknown): Promise<ActionResult<nul
             elevation_m: v.elevationM,
             external_geo_consent: v.externalConsent,
             location_confirmed_at: v.confirmedAt,
+            location_country: v.countryCode ?? null,
+            location_label_source: v.labelSource ?? null,
           };
         })();
   if (!patch) return { ok: false, error: "بيانات الموقع غير صالحة." };

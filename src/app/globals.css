@@ -299,3 +299,29 @@
     }
   }
 }
+
+/* Location flow: each step rises in once; the locating pin pulses gently. */
+@media (prefers-reduced-motion: no-preference) {
+  .loc-step {
+    animation: rise 0.35s cubic-bezier(0.22, 1, 0.36, 1) both;
+  }
+
+  .loc-pulse {
+    animation: loc-pulse 1.8s ease-out infinite;
+  }
+
+  .loc-pulse-2 {
+    animation-delay: 0.6s;
+  }
+}
+
+@keyframes loc-pulse {
+  0% {
+    transform: scale(0.6);
+    opacity: 0.9;
+  }
+  100% {
+    transform: scale(1.25);
+    opacity: 0;
+  }
+}

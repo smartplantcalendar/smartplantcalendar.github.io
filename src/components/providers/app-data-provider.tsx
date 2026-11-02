@@ -40,6 +40,7 @@ import {
   writeLocation,
   type SavedLocation,
 } from "@/lib/local-store";
+import { persistLocation, type LocationSaveResult } from "@/lib/location-save";
 import { getBrowserSupabase } from "@/lib/supabase/client";
 import { normalizeLocation } from "@/domain/location";
 
@@ -55,6 +56,8 @@ interface ProfileLocationRow {
   elevation_m?: number | string | null;
   external_geo_consent?: boolean | null;
   location_confirmed_at?: string | null;
+  location_country?: string | null;
+  location_label_source?: string | null;
 }
 
 function profileToLocation(p: ProfileLocationRow): SavedLocation | null {
@@ -78,6 +81,8 @@ function profileToLocation(p: ProfileLocationRow): SavedLocation | null {
     timezone: p.timezone || DEFAULT_TIMEZONE,
     externalConsent: Boolean(p.external_geo_consent),
     confirmedAt: p.location_confirmed_at ?? new Date(0).toISOString(),
+    countryCode: p.location_country ?? null,
+    labelSource: p.location_label_source ?? undefined,
   });
 }
 
@@ -97,7 +102,7 @@ interface AppData {
   today: string;
   location: SavedLocation | null;
   localItemsToImport: number;
-  setLocation: (loc: SavedLocation | null) => Promise<Result>;
+  setLocation: (loc: SavedLocation | null) => Promise<LocationSaveResult>;
   reload: () => Promise<void>;
   createPlan: (input: PlanRequest, crop: Crop) => Promise<Result<{ plantingId: string; gardenId: string }>>;
   addTask: (input: TaskInput) => Promise<Result<Task>>;
@@ -176,7 +181,7 @@ export function AppDataProvider({ children }: { children: React.ReactNode }) {
       if (supabase) {
         const { data: profile } = await supabase
           .from("profiles")
-          .select("role, region_id, zone, latitude, longitude, timezone, location_label, location_source, location_accuracy_m, elevation_m, external_geo_consent, location_confirmed_at")
+          .select("role, region_id, zone, latitude, longitude, timezone, location_label, location_source, location_accuracy_m, elevation_m, external_geo_consent, location_confirmed_at, location_country, location_label_source")
           .eq("id", u.id)
           .maybeSingle();
         setIsAdmin(profile?.role === "admin");
@@ -219,13 +224,17 @@ export function AppDataProvider({ children }: { children: React.ReactNode }) {
   /** Saves the confirmed location on this device, and on the profile when signed in. */
   const setLocation = useCallback<AppData["setLocation"]>(
     async (loc) => {
-      setLocationState(loc);
-      writeLocation(loc);
-      if (mode === "remote") {
-        const res = await callAction(() => saveLocationAction(loc));
-        if (!res.ok) return res;
-      }
-      return { ok: true, data: null };
+      const res = await persistLocation(loc, {
+        signedIn: mode === "remote",
+        writeLocal: writeLocation,
+        saveToAccount: async (l) => {
+          const r = await callAction(() => saveLocationAction(l));
+          return r.ok ? { ok: true } : { ok: false, error: r.error };
+        },
+      });
+      // The app only switches to the new location once it is stored somewhere.
+      if (res.ok) setLocationState(loc);
+      return res;
     },
     [mode],
   );

@@ -1,465 +1,623 @@
 "use client";
 
 import {
-  Check,
-  Crosshair,
-  List,
+  ArrowLeft,
+  CircleCheck,
   LocateFixed,
-  Map as MapIcon,
   MapPin,
-  Mountain,
+  MapPinned,
+  PencilLine,
+  RotateCcw,
   Search,
   ShieldCheck,
-  Trash2,
-  TriangleAlert,
+  WifiOff,
 } from "lucide-react";
-import dynamic from "next/dynamic";
+import Link from "next/link";
 import { useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
 import { useAppData } from "@/components/providers/app-data-provider";
-import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Alert, Spinner } from "@/components/ui/feedback";
-import { Checkbox, Input, Label, Select } from "@/components/ui/form-controls";
-import { Skeleton } from "@/components/ui/skeleton";
-import { COUNTRIES, findRegion, nearestRegion, regionsForCountry } from "@/data/regions";
+import { Input } from "@/components/ui/form-controls";
+import { COUNTRIES, findRegion, nearestRegion } from "@/data/regions";
+import { accuracyLevel, isInLevant, suggestZone } from "@/domain/geo";
 import {
-  accuracyLevel,
-  distanceKm,
-  formatAccuracy,
-  formatCoordinate,
-  isInLevant,
-  suggestZone,
-  type LatLon,
-} from "@/domain/geo";
-import { CLIMATE_ZONE_DESCRIPTIONS, CLIMATE_ZONE_LABELS } from "@/domain/labels";
-import { LOCATION_SOURCE_LABELS, type LocationSource, type SavedLocation, type ZoneSource } from "@/domain/location";
-import { CLIMATE_ZONES, type ClimateZone } from "@/domain/types";
-import { formatNumber } from "@/lib/format";
+  buildSavedLocation,
+  countryOfLocation,
+  normalizeCountry,
+  type LabelSource,
+  type LocationDraft,
+  type SavedLocation,
+  type ZoneSource,
+} from "@/domain/location";
+import type { ClimateZone } from "@/domain/types";
 import { fetchElevation } from "@/lib/geo/elevation";
 import { GPS_ERROR_MESSAGES, GpsError, locateHighAccuracy, type GpsFix } from "@/lib/geo/gps";
-import { reverseGeocode, searchPlaces, type Place } from "@/lib/geo/nominatim";
+import { GeocodeError, reverseGeocode, searchPlaces, type Place } from "@/lib/geo/nominatim";
 import { cn } from "@/lib/utils";
+import { AdvancedOptions } from "./advanced-options";
 
-const MapPicker = dynamic(() => import("./map-picker").then((m) => m.MapPicker), {
-  ssr: false,
-  loading: () => <Skeleton className="h-80 w-full rounded-xl" />,
-});
+type Step = "start" | "locating" | "consent" | "naming" | "confirm" | "fix-name" | "search" | "saved";
 
-type Tab = "gps" | "map" | "search" | "list";
-
-interface Draft extends LatLon {
-  source: LocationSource;
-  accuracyM: number | null;
-  /** Name chosen from search/list; reverse geocoding fills it otherwise. */
-  presetLabel: string | null;
+/** What we know about the place name, independently of the coordinates. */
+interface NameInfo {
+  /** Village/town name, or null when unknown. */
+  locality: string | null;
+  district: string | null;
+  kind: Place["localityKind"] | null;
+  source: LabelSource;
+  countryCode: string | null;
+  /** Why the name is unknown, for the message shown. */
+  reason?: "no_consent" | "not_found" | "offline";
 }
 
-const TABS: { id: Tab; label: string; icon: typeof MapPin }[] = [
-  { id: "gps", label: "موقعي الحالي (GPS)", icon: LocateFixed },
-  { id: "map", label: "الخريطة", icon: MapIcon },
-  { id: "search", label: "بحث عن قرية أو مكان", icon: Search },
-  { id: "list", label: "قائمة المدن", icon: List },
-];
+const BIG = "h-14 w-full rounded-2xl text-lg font-bold sm:w-auto sm:px-8";
 
-const ACCURACY_TEXT = {
-  high: { tone: "success", text: "دقة عالية" },
-  medium: { tone: "info", text: "دقة متوسطة" },
-  low: { tone: "warning", text: "دقة ضعيفة" },
-  very_low: { tone: "danger", text: "دقة ضعيفة جدًا" },
-} as const;
-
-/** Returns the async lookup result for `key`, or undefined while it is pending. */
-function useKeyedResult<T>(key: string | null, run: (() => Promise<T>) | null): { value: T | undefined; done: boolean } {
-  const [state, setState] = useState<{ key: string; value: T } | null>(null);
-  const runRef = useRef(run);
-  useEffect(() => {
-    runRef.current = run;
-  });
-  useEffect(() => {
-    if (!key || !runRef.current) return;
-    let cancelled = false;
-    const t = setTimeout(() => {
-      runRef.current?.().then((value) => !cancelled && setState({ key, value }));
-    }, 600);
-    return () => {
-      cancelled = true;
-      clearTimeout(t);
-    };
-  }, [key]);
-  const done = !!key && state?.key === key;
-  return { value: done ? state!.value : undefined, done };
+function labelOf(n: NameInfo | null): string {
+  if (!n?.locality) return "";
+  return [n.locality, n.district && n.district !== n.locality ? n.district : null].filter(Boolean).join("، ");
 }
 
-export function LocationPicker({ onConfirmed, className }: { onConfirmed?: (loc: SavedLocation) => void; className?: string }) {
+function fromPlace(p: Place, source: LabelSource): NameInfo {
+  return {
+    locality: p.locality ?? null,
+    district: p.district ?? null,
+    kind: p.localityKind ?? null,
+    source: p.locality ? source : "none",
+    countryCode: normalizeCountry(p.countryCode),
+    reason: p.locality ? undefined : "not_found",
+  };
+}
+
+/**
+ * Farmer-first location flow: one big button, then «هل هذه قريتك؟».
+ * Technical details (map, town list, coordinates, elevation, climate zone,
+ * country) live in «خيارات متقدمة». Coordinates never leave the device before
+ * the user agrees; the place search sends only the typed text, on submit.
+ */
+export function LocationPicker({
+  onConfirmed,
+  className,
+  showIntro = true,
+  startInEdit = false,
+}: {
+  onConfirmed?: (loc: SavedLocation) => void;
+  className?: string;
+  /** The «وين أرضك؟» heading (off when embedded in the planner). */
+  showIntro?: boolean;
+  /** Skip the "already saved" view. */
+  startInEdit?: boolean;
+}) {
   const { location, setLocation, mode } = useAppData();
-  const [tab, setTab] = useState<Tab>("gps");
+  const [step, setStep] = useState<Step>(location && !startInEdit ? "saved" : "start");
+  /** Set only after a real save: everywhere, or this device only (account failed). */
+  const [justSaved, setJustSaved] = useState<null | { deviceOnly: boolean; accountError?: string }>(null);
+  /** A save/delete that failed, kept so the farmer can retry it. */
+  const [saveFailure, setSaveFailure] = useState<{ error: string; location: SavedLocation } | null>(null);
+  const [deleteError, setDeleteError] = useState<string | null>(null);
   const [consent, setConsent] = useState<boolean>(location?.externalConsent ?? false);
-  const [draft, setDraft] = useState<Draft | null>(
-    location
-      ? { latitude: location.latitude, longitude: location.longitude, source: location.source, accuracyM: location.accuracyM, presetLabel: location.label }
-      : null,
-  );
-  const [gpsState, setGpsState] = useState<{ status: "idle" | "locating" | "done" | "error"; fix?: GpsFix; message?: string }>({
-    status: "idle",
-  });
+  const [draft, setDraft] = useState<LocationDraft | null>(null);
+  const [gpsFix, setGpsFix] = useState<GpsFix | null>(null);
+  const [gpsError, setGpsError] = useState<string | null>(null);
+  const [name, setName] = useState<NameInfo | null>(null);
+  const [typedName, setTypedName] = useState("");
   const [query, setQuery] = useState("");
-  const [searchState, setSearchState] = useState<{ status: "idle" | "loading" | "done" | "error"; results: Place[] }>({
-    status: "idle",
-    results: [],
-  });
-  const [country, setCountry] = useState(findRegion(location?.regionId)?.countryCode ?? "PS");
-  const [manualZone, setManualZone] = useState<ClimateZone | null>(location?.zoneSource === "manual" ? location.zone : null);
+  const [search, setSearch] = useState<{ status: "idle" | "loading" | "done" | "error"; results: Place[] }>({ status: "idle", results: [] });
+  const [manualZone, setManualZone] = useState<ClimateZone | null>(null);
+  const [manualCountry, setManualCountry] = useState<string | null>(null);
+  const [elevation, setElevation] = useState<{ key: string; value: number | null } | null>(null);
   const [saving, setSaving] = useState(false);
 
-  const nearest = draft ? nearestRegion(draft.latitude, draft.longitude) : null;
-  const nearestKm = draft && nearest ? distanceKm(draft, nearest) : null;
+  const rootRef = useRef<HTMLDivElement>(null);
+  // Each new step starts at the top of the flow (after a long form, the next
+  // step would otherwise open half-scrolled under the header).
+  const firstRender = useRef(true);
+  useEffect(() => {
+    if (firstRender.current) {
+      firstRender.current = false;
+      return;
+    }
+    const el = rootRef.current;
+    if (el && el.getBoundingClientRect().top < 80) {
+      const reduce = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+      window.scrollTo({ top: window.scrollY + el.getBoundingClientRect().top - 88, behavior: reduce ? "auto" : "smooth" });
+    }
+  }, [step]);
+
   const pointKey = draft ? `${draft.latitude.toFixed(4)},${draft.longitude.toFixed(4)}` : null;
+  // Elevation (Open-Meteo, ~100 m rounding) only with consent; set from an async callback.
+  useEffect(() => {
+    if (!consent || !draft || !pointKey || draft.source === "list") return;
+    let cancelled = false;
+    fetchElevation(draft).then((value) => {
+      if (!cancelled) setElevation({ key: pointKey, value });
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [consent, draft, pointKey]);
 
-  // External lookups only with consent; the elevation request uses ~100 m rounding.
-  const elevation = useKeyedResult(consent && draft ? `elev:${pointKey}` : null, draft ? () => fetchElevation(draft) : null);
-  const place = useKeyedResult(
-    consent && draft && !draft.presetLabel ? `rev:${pointKey}` : null,
-    draft ? () => reverseGeocode(draft).catch(() => null) : null,
-  );
+  const nearest = draft ? nearestRegion(draft.latitude, draft.longitude) : null;
+  const gpsAltitude = draft?.source === "gps" && gpsFix?.altitudeM != null && (gpsFix.altitudeAccuracyM ?? 999) <= 30 ? gpsFix.altitudeM : null;
+  const elevationM = gpsAltitude ?? (elevation && elevation.key === pointKey ? elevation.value : null);
+  const listRegion = draft?.source === "list" && nearest ? nearest : null;
+  const suggestion = draft && !listRegion ? suggestZone(draft, elevationM, nearest ? { name: nearest.name, zone: nearest.zone } : null) : null;
+  const zone: ClimateZone | null = manualZone ?? listRegion?.zone ?? suggestion?.zone ?? null;
+  const zoneSource: ZoneSource = manualZone ? "manual" : listRegion ? "list" : (suggestion?.basis ?? "nearest_town");
+  const countryCode = manualCountry ?? name?.countryCode ?? null;
+  const detectedCountry = draft ? countryOfLocation({ ...draft, regionId: nearest?.id ?? null, countryCode }) : null;
+  const level = draft?.source === "gps" && draft.accuracyM != null ? accuracyLevel(draft.accuracyM) : null;
 
-  const elevationM = draft?.source === "gps" && gpsState.fix?.altitudeM != null && (gpsState.fix.altitudeAccuracyM ?? 999) <= 30
-    ? gpsState.fix.altitudeM
-    : (elevation.value ?? null);
-
-  const suggestion = draft ? suggestZone(draft, elevationM, nearest ? { name: nearest.name, zone: nearest.zone } : null) : null;
-  const zone: ClimateZone | null = manualZone ?? suggestion?.zone ?? null;
-  const zoneSource: ZoneSource = manualZone ? "manual" : draft?.source === "list" ? "list" : (suggestion?.basis ?? "nearest_town");
-
-  const label =
-    draft?.presetLabel ??
-    place.value?.label ??
-    (draft ? `${formatCoordinate(draft.latitude, "lat")}، ${formatCoordinate(draft.longitude, "lon")}` : "");
-
-  function pick(next: Draft) {
+  function resetFor(next: LocationDraft) {
     setDraft(next);
     setManualZone(null);
+    setManualCountry(null);
+    setName(null);
+    setTypedName("");
+  }
+
+  async function lookupName(d: LocationDraft) {
+    setStep("naming");
+    try {
+      const place = await reverseGeocode(d);
+      setName(place ? fromPlace(place, "osm") : { locality: null, district: null, kind: null, source: "none", countryCode: null, reason: "not_found" });
+    } catch (e) {
+      setName({
+        locality: null,
+        district: null,
+        kind: null,
+        source: "none",
+        countryCode: null,
+        reason: e instanceof GeocodeError && e.message === "network" ? "offline" : "not_found",
+      });
+    }
+    setStep("confirm");
   }
 
   async function runGps() {
-    setGpsState({ status: "locating" });
+    setGpsError(null);
+    setStep("locating");
     try {
-      const fix = await locateHighAccuracy({
-        maxWaitMs: 25_000,
-        onProgress: (f) => setGpsState({ status: "locating", fix: f }),
-      });
-      setGpsState({ status: "done", fix });
-      pick({ latitude: fix.latitude, longitude: fix.longitude, source: "gps", accuracyM: fix.accuracyM, presetLabel: null });
+      const fix = await locateHighAccuracy({ maxWaitMs: 25_000 });
+      const d: LocationDraft = { latitude: fix.latitude, longitude: fix.longitude, source: "gps", accuracyM: fix.accuracyM };
+      setGpsFix(fix);
+      resetFor(d);
+      if (consent) await lookupName(d);
+      else setStep("consent");
     } catch (e) {
       const kind = e instanceof GpsError ? e.kind : "unavailable";
-      setGpsState({ status: "error", message: GPS_ERROR_MESSAGES[kind] });
+      setGpsError(GPS_ERROR_MESSAGES[kind]);
+      setStep("start");
+    }
+  }
+
+  async function answerConsent(yes: boolean) {
+    if (!draft) return;
+    if (yes) {
+      setConsent(true);
+      await lookupName(draft);
+    } else {
+      setName({ locality: null, district: null, kind: null, source: "none", countryCode: null, reason: "no_consent" });
+      setStep("confirm");
     }
   }
 
   async function runSearch(e: React.FormEvent) {
     e.preventDefault();
-    if (!consent || query.trim().length < 2) return;
-    setSearchState({ status: "loading", results: [] });
+    if (query.trim().length < 2) return;
+    setSearch({ status: "loading", results: [] });
     try {
-      const results = await searchPlaces(query);
-      setSearchState({ status: "done", results });
+      setSearch({ status: "done", results: await searchPlaces(query) });
     } catch {
-      setSearchState({ status: "error", results: [] });
+      setSearch({ status: "error", results: [] });
     }
   }
 
-  async function confirm() {
+  function pickSearchResult(p: Place) {
+    resetFor({ latitude: p.latitude, longitude: p.longitude, source: "search", accuracyM: null });
+    setName(fromPlace(p, "search"));
+    setStep("confirm");
+  }
+
+  function pickTown(regionId: string) {
+    const r = findRegion(regionId);
+    if (!r) return;
+    resetFor({ latitude: r.latitude, longitude: r.longitude, source: "list", accuracyM: null });
+    setName({ locality: r.name, district: null, kind: "city", source: "list", countryCode: r.countryCode });
+    setStep("confirm");
+  }
+
+  function pickOnMap(p: { latitude: number; longitude: number }) {
+    resetFor({ latitude: p.latitude, longitude: p.longitude, source: "map", accuracyM: null });
+  }
+
+  async function save(label: string, labelSource: LabelSource) {
     if (!draft || !zone) return;
-    const region = nearest!;
-    const saved: SavedLocation = {
-      version: 2,
-      source: draft.source,
-      latitude: draft.latitude,
-      longitude: draft.longitude,
-      accuracyM: draft.accuracyM,
-      label,
-      regionId: region.id,
+    const saved = buildSavedLocation({
+      draft,
+      label: label || "موقع أرضي",
+      labelSource: label ? labelSource : "none",
+      countryCode,
       zone,
       zoneSource,
-      elevationM: elevationM == null ? null : Math.round(elevationM),
-      timezone: region.timezone,
+      elevationM,
       externalConsent: consent,
-      confirmedAt: new Date().toISOString(),
-    };
+    });
+    await persist(saved);
+  }
+
+  /** Saves and shows success only when the location is really stored. */
+  async function persist(saved: SavedLocation) {
     setSaving(true);
     const res = await setLocation(saved);
     setSaving(false);
     if (!res.ok) {
-      toast.error(`حُفظ الموقع على هذا الجهاز فقط: ${res.error}`);
-    } else {
-      toast.success(mode === "remote" ? "تم حفظ موقعك في حسابك" : "تم حفظ موقعك على هذا الجهاز");
+      setSaveFailure({ error: res.error, location: saved });
+      return;
     }
+    setSaveFailure(null);
+    setDeleteError(null);
+    setJustSaved({ deviceOnly: res.data.savedToAccount === false, accountError: res.data.accountError });
+    setStep("saved");
     onConfirmed?.(saved);
   }
 
-  const gpsFix = gpsState.fix;
-  const level = gpsFix ? accuracyLevel(gpsFix.accuracyM) : null;
+  async function removeSaved() {
+    const res = await setLocation(null);
+    if (!res.ok) {
+      setDeleteError(res.error);
+      toast.error(res.error);
+      return;
+    }
+    setDeleteError(null);
+    setJustSaved(null);
+    setDraft(null);
+    setName(null);
+    setStep("start");
+    toast.success("تم حذف الموقع المحفوظ");
+  }
+
+  const knownLabel = labelOf(name);
 
   return (
-    <div className={cn("flex flex-col gap-5", className)}>
-      {/* Privacy consent */}
-      <div className="rounded-xl border border-border bg-surface-muted p-4">
-        <label className="flex items-start gap-3 text-sm leading-7">
-          <Checkbox className="mt-1.5" checked={consent} onChange={(e) => setConsent(e.target.checked)} />
-          <span>
-            <span className="flex items-center gap-1.5 font-bold"><ShieldCheck className="size-4 text-brand-600" aria-hidden /> أوافق على استخدام خدمات الخرائط والطقس الخارجية لموقعي</span>
-            <span className="block text-muted-foreground">
-              عند الموافقة نرسل الإحداثيات إلى OpenStreetMap (الخريطة، واسم المكان، والبحث) وإلى Open-Meteo (الارتفاع والطقس). نرسل إلى خدمة الطقس إحداثيات مقرّبة (نحو 1 كم) فقط، ولا نسجّل موقعك في أي أداة تحليلات. دون الموافقة يبقى تحديد GPS على جهازك فقط.
+    <div ref={rootRef} className={cn("flex flex-col gap-5", className)}>
+      {saveFailure && step !== "saved" ? (
+        <Alert tone="danger" title="لم يُحفظ الموقع">
+          <span className="block" data-testid="location-save-error">{saveFailure.error}</span>
+          <Button size="lg" className="mt-3" disabled={saving} onClick={() => persist(saveFailure.location)}>
+            {saving ? <Spinner /> : <RotateCcw />} حاول مرة أخرى
+          </Button>
+        </Alert>
+      ) : null}
+      {deleteError ? (
+        <Alert tone="danger" title="لم يُحذف الموقع">
+          <span className="block" data-testid="location-delete-error">{deleteError}</span>
+          <Button size="lg" variant="outline" className="mt-3" onClick={removeSaved}>
+            <RotateCcw /> حاول مرة أخرى
+          </Button>
+        </Alert>
+      ) : null}
+      {step === "saved" && location ? (
+        <section key="saved" aria-labelledby="loc-saved" className="loc-step flex flex-col gap-4 rounded-3xl border border-border bg-surface p-5 shadow-xs sm:p-7">
+          {justSaved && !justSaved.deviceOnly ? (
+            <p role="status" className="flex items-center gap-2 text-lg font-extrabold text-brand-700">
+              <CircleCheck className="size-6" aria-hidden /> تم حفظ موقع أرضك بنجاح
+            </p>
+          ) : null}
+          {justSaved?.deviceOnly ? (
+            <Alert tone="warning" title="حُفظ موقع أرضك على هذا الجهاز فقط">
+              <span className="block" data-testid="location-device-only">
+                لم نتمكن من حفظه في حسابك{justSaved.accountError ? ` (${justSaved.accountError})` : ""}. سيبقى على هذا الجهاز، ولن يظهر على أجهزتك الأخرى حتى ينجح الحفظ في الحساب.
+              </span>
+              <Button size="lg" variant="outline" className="mt-3" disabled={saving} onClick={() => persist(location)}>
+                {saving ? <Spinner /> : <RotateCcw />} أعد المحاولة للحفظ في حسابك
+              </Button>
+            </Alert>
+          ) : null}
+          <div>
+            <h2 id="loc-saved" className="text-sm font-bold text-muted-foreground">أرضك في</h2>
+            <p className="mt-1 flex items-center gap-2 text-2xl font-extrabold" data-testid="location-saved-name">
+              <MapPin className="size-6 shrink-0 text-brand-600" aria-hidden />
+              {location.label}
+            </p>
+            {countryOfLocation(location) == null ? (
+              <p className="mt-2 text-sm text-muted-foreground">لم نتأكد من البلد لهذا الموقع، لذلك لن نعرض مواعيد خاصة ببلد معيّن. يمكنك تحديده من «تغيير» ثم «خيارات متقدمة».</p>
+            ) : null}
+          </div>
+          <div className="flex flex-col gap-3 sm:flex-row">
+            <Button asChild size="lg" className={BIG}>
+              <Link href="/recommendations/">
+                اعرف ماذا تزرع الآن <ArrowLeft />
+              </Link>
+            </Button>
+            <Button
+              variant="outline"
+              size="lg"
+              className={BIG}
+              onClick={() => {
+                setJustSaved(null);
+                setStep("start");
+              }}
+            >
+              <PencilLine /> تغيير
+            </Button>
+          </div>
+        </section>
+      ) : null}
+
+      {step === "start" ? (
+        <section key="start" aria-labelledby="loc-title" className="loc-step flex flex-col gap-5">
+          {showIntro ? (
+            <div className="space-y-2">
+              <h1 id="loc-title" className="text-4xl font-extrabold">وين أرضك؟</h1>
+              <p className="text-lg text-muted-foreground">حدد موقع أرضك حتى نعرف مواعيد الزراعة المناسبة لمنطقتك.</p>
+            </div>
+          ) : (
+            <h2 id="loc-title" className="sr-only">تحديد موقع الأرض</h2>
+          )}
+          <Button size="lg" className={cn(BIG, "h-16 text-xl")} onClick={runGps}>
+            <LocateFixed className="!size-6" /> حدد موقعي تلقائيًا
+          </Button>
+          <Button variant="link" className="h-auto self-start text-base font-bold" onClick={() => setStep("search")}>
+            أو ابحث عن قريتك بالاسم
+          </Button>
+          <p className="rounded-2xl bg-surface-muted p-4 text-sm leading-7 text-muted-foreground">
+            <strong className="text-foreground">لست في أرضك الآن؟</strong> التحديد التلقائي يأخذ مكانك الحالي. إن كانت أرضك في مكان آخر، ابحث عن قريتها بالاسم أو اخترها على الخريطة من «خيارات متقدمة».
+          </p>
+          {gpsError ? (
+            <Alert tone="warning" title="تعذّر تحديد الموقع">
+              <span className="block">{gpsError}</span>
+              <Button variant="outline" size="sm" className="mt-2" onClick={() => setStep("search")}>
+                <Search /> ابحث عن قريتك بالاسم
+              </Button>
+            </Alert>
+          ) : null}
+        </section>
+      ) : null}
+
+      {step === "locating" ? (
+        <section key="locating" role="status" aria-live="polite" className="loc-step flex flex-col items-center gap-5 rounded-3xl border border-border bg-surface px-5 py-10 text-center">
+          <span className="relative flex size-24 items-center justify-center">
+            <span className="loc-pulse absolute inset-0 rounded-full bg-brand-100" aria-hidden />
+            <span className="loc-pulse loc-pulse-2 absolute inset-3 rounded-full bg-brand-100" aria-hidden />
+            <span className="relative flex size-14 items-center justify-center rounded-full bg-primary text-primary-foreground shadow-md">
+              <MapPin className="size-7" aria-hidden />
             </span>
           </span>
-        </label>
-      </div>
+          <div>
+            <p className="text-xl font-extrabold">جارٍ تحديد موقعك…</p>
+            <p className="mt-1 text-sm text-muted-foreground">قد يستغرق ذلك حتى نصف دقيقة. يساعد الوقوف في مكان مكشوف.</p>
+          </div>
+        </section>
+      ) : null}
 
-      <div role="tablist" aria-label="طريقة تحديد الموقع" className="grid grid-cols-2 gap-1 rounded-xl bg-surface-muted p-1 sm:grid-cols-4">
-        {TABS.map((t) => (
-          <button
-            key={t.id}
-            role="tab"
-            type="button"
-            aria-selected={tab === t.id}
-            onClick={() => setTab(t.id)}
-            className={cn(
-              "flex items-center justify-center gap-1.5 rounded-lg px-2 py-2 text-sm font-semibold text-muted-foreground",
-              tab === t.id && "bg-surface text-brand-700 shadow-xs",
-            )}
-          >
-            <t.icon className="size-4" aria-hidden />
-            {t.label}
-          </button>
-        ))}
-      </div>
-
-      <div role="tabpanel" aria-label={TABS.find((t) => t.id === tab)?.label}>
-        {tab === "gps" && (
-          <div className="flex flex-col gap-3">
-            <p className="text-sm text-muted-foreground">
-              نطلب من جهازك أدق موقع متاح (GPS) وننتظر حتى 25 ثانية لتحسين الدقة. يُفضّل الوقوف في مكان مكشوف وتشغيل خدمة الموقع.
-            </p>
-            <Button className="self-start" onClick={runGps} disabled={gpsState.status === "locating"}>
-              {gpsState.status === "locating" ? <Spinner /> : <Crosshair />}
-              {gpsState.status === "locating" ? "جارٍ تحديد موقعك بدقة…" : "حدّد موقعي بدقة"}
+      {step === "consent" ? (
+        <section key="consent" aria-labelledby="loc-consent" className="loc-step flex flex-col gap-4 rounded-3xl border border-border bg-surface p-5 sm:p-7">
+          <p className="flex items-center gap-2 font-bold text-brand-700">
+            <CircleCheck className="size-5" aria-hidden /> حددنا المكان
+          </p>
+          <h2 id="loc-consent" className="text-2xl font-extrabold">نعرف اسم قريتك؟</h2>
+          <p className="text-base leading-8 text-muted-foreground">
+            لمعرفة اسم قريتك نرسل موقعك إلى خدمة الخرائط المفتوحة (OpenStreetMap). ونرسل للطقس موقعًا تقريبيًا فقط.
+          </p>
+          <details className="rounded-xl bg-surface-muted p-3 text-sm leading-7 text-muted-foreground">
+            <summary className="cursor-pointer font-bold text-foreground">التفاصيل</summary>
+            <ul className="mt-2 list-disc space-y-1 ps-5">
+              <li>بموافقتك نرسل الإحداثيات إلى OpenStreetMap لمعرفة اسم المكان وعرض الخريطة، وإلى Open-Meteo لمعرفة الارتفاع (مقرّبة نحو 100 م) والطقس (مقرّبة نحو 1 كم).</li>
+              <li>دون الموافقة يبقى موقعك على جهازك فقط، ويمكنك كتابة اسم قريتك بنفسك.</li>
+              <li>لا نستخدم أدوات تحليلات، ولا نضع موقعك في روابط الصفحات.</li>
+            </ul>
+          </details>
+          <div className="flex flex-col gap-3 sm:flex-row">
+            <Button size="lg" className={BIG} onClick={() => answerConsent(true)}>
+              <ShieldCheck /> نعم، اعرف اسم قريتي
             </Button>
-            {gpsState.status === "locating" && gpsFix ? (
-              <p role="status" className="text-sm text-muted-foreground">أفضل دقة حتى الآن: {formatAccuracy(gpsFix.accuracyM)}…</p>
-            ) : null}
-            {gpsState.status === "error" ? <Alert tone="warning" title="تعذّر تحديد الموقع">{gpsState.message}</Alert> : null}
-            {gpsState.status === "done" && gpsFix && level ? (
-              <div className="flex flex-col gap-2">
-                <p className="flex flex-wrap items-center gap-2 text-sm">
-                  <Badge variant={ACCURACY_TEXT[level].tone === "success" ? "default" : ACCURACY_TEXT[level].tone === "info" ? "info" : ACCURACY_TEXT[level].tone === "warning" ? "warning" : "danger"}>
-                    {ACCURACY_TEXT[level].text}
-                  </Badge>
-                  <span>نصف قطر الدقة: <strong>{formatAccuracy(gpsFix.accuracyM)}</strong></span>
+            <Button variant="outline" size="lg" className={BIG} onClick={() => answerConsent(false)}>
+              لا، سأكتب الاسم بنفسي
+            </Button>
+          </div>
+        </section>
+      ) : null}
+
+      {step === "naming" ? (
+        <section key="naming" role="status" aria-live="polite" className="loc-step flex items-center gap-3 rounded-3xl border border-border bg-surface p-6">
+          <Spinner className="size-6" />
+          <p className="text-lg font-bold">نبحث عن اسم قريتك…</p>
+        </section>
+      ) : null}
+
+      {step === "confirm" && draft ? (
+        <section key="confirm" aria-labelledby="loc-confirm" className="loc-step flex flex-col gap-4 rounded-3xl border border-border bg-surface p-5 shadow-xs sm:p-7">
+          {knownLabel ? (
+            <>
+              <div>
+                <p className="text-sm font-bold text-muted-foreground">{draft.source === "gps" ? "موقعك الآن في" : "المكان المختار"}</p>
+                <p className="mt-1 flex items-center gap-2 text-3xl font-extrabold" data-testid="location-label">
+                  <MapPin className="size-7 shrink-0 text-brand-600" aria-hidden />
+                  {name?.locality}
                 </p>
-                {level === "low" || level === "very_low" ? (
-                  <Alert tone="warning" title="الدقة ضعيفة">
-                    قد يكون الموقع بعيدًا عن أرضك بمئات الأمتار أو أكثر (غالبًا لأن الجهاز استخدم الشبكة بدل GPS). أعد المحاولة في مكان مكشوف، أو صحّح الموقع بسحب الدبوس على الخريطة.
-                  </Alert>
+                {name?.district && name.district !== name.locality ? (
+                  <p className="ms-9 text-lg text-muted-foreground" data-testid="location-district">{name.district}</p>
                 ) : null}
-                <Button variant="outline" size="sm" className="self-start" onClick={() => setTab("map")}>
-                  <MapIcon /> صحّح الموقع على الخريطة
+                {name?.source === "osm" || name?.source === "search" ? (
+                  <p className="ms-9 mt-1 text-xs text-subtle-foreground">اسم المكان: © مساهمو OpenStreetMap</p>
+                ) : null}
+              </div>
+              {name?.kind === "city" || name?.kind === "town" ? (
+                <p className="rounded-xl bg-surface-muted p-3 text-sm leading-7 text-muted-foreground">
+                  إن كانت أرضك في قرية صغيرة قرب {name.locality}، اضغط «لا، غيّر القرية».
+                </p>
+              ) : null}
+              <h2 id="loc-confirm" className="text-xl font-extrabold">هل هذه قريتك؟</h2>
+              <div className="flex flex-col gap-3 sm:flex-row">
+                <Button size="lg" className={BIG} disabled={saving || !zone} onClick={() => save(knownLabel, name?.source ?? "none")}>
+                  {saving ? <Spinner /> : <CircleCheck />} نعم، احفظ الموقع
+                </Button>
+                <Button variant="outline" size="lg" className={BIG} onClick={() => setStep("fix-name")}>
+                  لا، غيّر القرية
                 </Button>
               </div>
-            ) : null}
-          </div>
-        )}
-
-        {tab === "map" && (
-          <div className="flex flex-col gap-3">
-            {consent ? (
-              <>
-                <p className="text-sm text-muted-foreground">اضغط على الخريطة أو اسحب الدبوس إلى موقع أرضك بالضبط. يمكنك التكبير لرؤية الحقول والطرق.</p>
-                <MapPicker
-                  value={draft}
-                  accuracyM={draft?.source === "gps" ? draft.accuracyM : null}
-                  onChange={(p) => pick({ ...p, source: "map", accuracyM: null, presetLabel: null })}
-                />
-              </>
-            ) : (
-              <Alert tone="info" title="الخريطة تحتاج موافقتك">
-                تُحمَّل صور الخريطة من خوادم OpenStreetMap، وهذا يكشف لها المنطقة المعروضة. فعّل خيار الموافقة أعلاه لعرض الخريطة، أو استخدم GPS أو قائمة المدن.
-              </Alert>
-            )}
-          </div>
-        )}
-
-        {tab === "search" && (
-          <div className="flex flex-col gap-3">
-            {consent ? (
-              <>
-                <form onSubmit={runSearch} className="flex gap-2" role="search">
-                  <Input
-                    aria-label="اسم القرية أو البلدة أو المكان"
-                    placeholder="مثال: بيت أمر، سبسطية، عرابة"
-                    value={query}
-                    onChange={(e) => setQuery(e.target.value)}
-                  />
-                  <Button type="submit" disabled={searchState.status === "loading" || query.trim().length < 2}>
-                    {searchState.status === "loading" ? <Spinner /> : <Search />} بحث
-                  </Button>
-                </form>
-                <p className="text-xs text-subtle-foreground">يتم البحث عند الضغط على «بحث» فقط، عبر خدمة Nominatim من OpenStreetMap.</p>
-                {searchState.status === "error" ? <Alert tone="warning">تعذّر البحث الآن. تحقق من اتصالك أو حاول بعد قليل، أو اختر موقعك من الخريطة.</Alert> : null}
-                {searchState.status === "done" && searchState.results.length === 0 ? (
-                  <p className="text-sm text-muted-foreground">لا توجد نتائج. جرّب كتابة الاسم بطريقة أخرى أو أضف اسم المحافظة.</p>
-                ) : null}
-                <ul className="flex flex-col gap-2">
-                  {searchState.results.map((r) => (
-                    <li key={`${r.latitude},${r.longitude},${r.displayName}`}>
-                      <button
-                        type="button"
-                        onClick={() => {
-                          pick({ latitude: r.latitude, longitude: r.longitude, source: "search", accuracyM: null, presetLabel: r.label });
-                          toast.success(`تم اختيار: ${r.label}. يمكنك ضبط الدبوس على الخريطة.`);
-                        }}
-                        className="w-full rounded-lg border border-border p-3 text-start hover:bg-surface-muted"
-                      >
-                        <span className="block font-semibold">{r.label}</span>
-                        <span className="block truncate text-xs text-muted-foreground">{r.displayName}</span>
-                      </button>
-                    </li>
-                  ))}
-                </ul>
-                {searchState.results.length ? <p className="text-xs text-subtle-foreground">بيانات الأماكن © مساهمو OpenStreetMap</p> : null}
-              </>
-            ) : (
-              <Alert tone="info" title="البحث يحتاج موافقتك">يُرسل نص البحث إلى OpenStreetMap. فعّل خيار الموافقة أعلاه للبحث عن قريتك.</Alert>
-            )}
-          </div>
-        )}
-
-        {tab === "list" && (
-          <div className="flex flex-col gap-3">
-            <p className="text-sm text-muted-foreground">
-              قائمة مختصرة بالمدن ومراكز المحافظات فقط. إن كانت أرضك في قرية أو منطقة ريفية فالأفضل استخدام GPS أو البحث أو الخريطة.
-            </p>
-            <div className="grid gap-3 sm:grid-cols-2">
-              <div className="flex flex-col gap-1.5">
-                <Label htmlFor="loc-country">الدولة</Label>
-                <Select id="loc-country" value={country} onChange={(e) => setCountry(e.target.value)}>
-                  {COUNTRIES.map((c) => <option key={c.code} value={c.code}>{c.name}</option>)}
-                </Select>
-              </div>
-              <div className="flex flex-col gap-1.5">
-                <Label htmlFor="loc-city">المدينة</Label>
-                <Select
-                  id="loc-city"
-                  value={draft?.source === "list" ? (nearest?.id ?? "") : ""}
-                  onChange={(e) => {
-                    const r = findRegion(e.target.value);
-                    if (r) pick({ latitude: r.latitude, longitude: r.longitude, source: "list", accuracyM: null, presetLabel: r.name });
-                  }}
-                >
-                  <option value="" disabled>اختر المدينة</option>
-                  {regionsForCountry(country).map((r) => <option key={r.id} value={r.id}>{r.name}</option>)}
-                </Select>
-              </div>
-            </div>
-          </div>
-        )}
-      </div>
-
-      {/* Result & confirmation */}
-      {draft ? (
-        <section aria-labelledby="loc-result" className="flex flex-col gap-4 rounded-2xl border border-border bg-surface p-4 sm:p-5">
-          <h3 id="loc-result" className="flex items-center gap-2 font-bold"><MapPin className="size-5 text-brand-600" aria-hidden /> الموقع المحدد</h3>
-          <dl className="grid gap-3 text-sm sm:grid-cols-2">
-            <div>
-              <dt className="text-xs font-semibold text-subtle-foreground">المكان</dt>
-              <dd className="font-semibold" data-testid="location-label">
-                {consent && !draft.presetLabel && !place.done ? <span className="text-muted-foreground">جارٍ معرفة اسم المكان…</span> : label}
-              </dd>
-              {!consent && !draft.presetLabel ? <dd className="text-xs text-subtle-foreground">وافق على الخدمات الخارجية لمعرفة اسم القرية أو الحي.</dd> : null}
-            </div>
-            <div>
-              <dt className="text-xs font-semibold text-subtle-foreground">الإحداثيات</dt>
-              <dd dir="ltr" className="text-end font-mono text-xs" data-testid="location-coords">
-                {draft.latitude.toFixed(5)}, {draft.longitude.toFixed(5)}
-              </dd>
-              {draft.accuracyM != null ? <dd className="text-xs">الدقة: {formatAccuracy(draft.accuracyM)}</dd> : null}
-              <dd className="text-xs text-subtle-foreground">المصدر: {LOCATION_SOURCE_LABELS[draft.source]}</dd>
-            </div>
-            <div>
-              <dt className="text-xs font-semibold text-subtle-foreground">الارتفاع</dt>
-              <dd>
-                {elevationM != null
-                  ? `${formatNumber(Math.round(elevationM), 0)} م ${elevationM < 0 ? "(تحت سطح البحر)" : "فوق سطح البحر"}`
-                  : consent && !elevation.done
-                    ? "جارٍ الحساب…"
-                    : "غير متوفر"}
-              </dd>
-              {elevationM != null ? <dd className="text-xs text-subtle-foreground">من نموذج تضاريس Copernicus عبر Open-Meteo (دقة نحو 90 م)</dd> : null}
-            </div>
-            <div>
-              <dt className="text-xs font-semibold text-subtle-foreground">أقرب مدينة في قائمتنا (للمرجع فقط)</dt>
-              <dd>{nearest ? `${nearest.name} — على بعد نحو ${formatNumber(Math.round(nearestKm ?? 0), 0)} كم` : "—"}</dd>
-            </div>
-          </dl>
-
-          {!isInLevant(draft) ? (
-            <Alert tone="warning">هذا الموقع خارج بلاد الشام. مواعيد الزراعة في المنصة مصممة لفلسطين والمنطقة، فقد لا تناسب موقعك.</Alert>
-          ) : null}
-
-          <fieldset className="flex flex-col gap-2">
-            <legend className="mb-1 flex items-center gap-1.5 text-sm font-bold"><Mountain className="size-4 text-brand-600" aria-hidden /> المنطقة المناخية</legend>
-            {suggestion ? (
-              <p className="text-sm leading-7 text-muted-foreground">
-                المقترح: <strong className="text-foreground">{CLIMATE_ZONE_LABELS[suggestion.zone]}</strong> — {suggestion.reason}
+            </>
+          ) : (
+            <>
+              <h2 id="loc-confirm" className="text-xl font-extrabold">لم نتمكن من معرفة اسم القرية بدقة</h2>
+              <p className="text-base leading-8 text-muted-foreground" data-testid="name-unknown-reason">
+                {name?.reason === "no_consent"
+                  ? "لم نرسل موقعك إلى خدمة الخرائط. اكتب اسم قريتك ليظهر في التطبيق، وسنحفظ المكان الذي حدده جهازك."
+                  : name?.reason === "offline"
+                    ? "لا يوجد اتصال بالإنترنت الآن. اكتب اسم قريتك، وسنحفظ المكان الذي حدده جهازك."
+                    : `لم تتعرف الخرائط على اسم قرية في هذا المكان${name?.district ? ` (يبدو أنه في ${name.district})` : ""}. اكتب اسم قريتك.`}
               </p>
-            ) : null}
-            <div className="grid gap-2 sm:grid-cols-2">
-              {CLIMATE_ZONES.map((z) => (
-                <label
-                  key={z}
-                  className={cn("flex cursor-pointer gap-3 rounded-xl border p-3", zone === z ? "border-primary bg-accent/50" : "border-border hover:bg-surface-muted")}
-                >
-                  <input
-                    type="radio"
-                    name="loc-zone"
-                    value={z}
-                    checked={zone === z}
-                    onChange={() => setManualZone(z === suggestion?.zone ? null : z)}
-                    className="mt-1.5 accent-[var(--primary)]"
-                  />
-                  <span>
-                    <span className="block font-semibold">
-                      {CLIMATE_ZONE_LABELS[z]}
-                      {suggestion?.zone === z ? <Badge className="ms-2">مقترح</Badge> : null}
-                    </span>
-                    <span className="block text-xs leading-6 text-muted-foreground">{CLIMATE_ZONE_DESCRIPTIONS[z]}</span>
-                  </span>
-                </label>
-              ))}
-            </div>
-          </fieldset>
-
-          <div className="flex flex-wrap gap-2">
-            <Button onClick={confirm} disabled={!zone || saving}>
-              {saving ? <Spinner /> : <Check />} تأكيد الموقع وحفظه
-            </Button>
-            {location ? (
-              <Button
-                variant="danger-ghost"
-                onClick={async () => {
-                  await setLocation(null);
-                  setDraft(null);
-                  toast.success("تم حذف الموقع المحفوظ");
+              {name?.reason === "offline" ? <WifiOff className="size-6 text-subtle-foreground" aria-hidden /> : null}
+              <form
+                className="flex flex-col gap-3"
+                onSubmit={(e) => {
+                  e.preventDefault();
+                  if (typedName.trim().length >= 2) void save(typedName.trim(), "manual");
                 }}
               >
-                <Trash2 /> حذف الموقع المحفوظ
+                <Input
+                  aria-label="اسم قريتك"
+                  placeholder="مثال: بيت أمر"
+                  value={typedName}
+                  onChange={(e) => setTypedName(e.target.value)}
+                  className="h-14 text-lg"
+                />
+                <Button type="submit" size="lg" className={BIG} disabled={saving || !zone || typedName.trim().length < 2}>
+                  {saving ? <Spinner /> : <CircleCheck />} احفظ الموقع بهذا الاسم
+                </Button>
+              </form>
+              <Button variant="link" className="h-auto self-start font-bold" onClick={() => setStep("search")}>
+                أو ابحث عن قريتك بالاسم
               </Button>
-            ) : null}
-          </div>
-          <p className="flex items-start gap-2 text-xs leading-6 text-subtle-foreground">
-            <TriangleAlert className="mt-1 size-3.5 shrink-0" aria-hidden />
-            اقتراح المنطقة المناخية قاعدة تقريبية (الارتفاع والقرب من البحر). صحّحها يدويًا إن كانت ظروف أرضك مختلفة.
-          </p>
+            </>
+          )}
+
+          {level === "low" || level === "very_low" ? (
+            <Alert tone="warning" title="الموقع تقريبي">
+              حدد جهازك مكانك بدقة ضعيفة، فقد يبتعد عن أرضك. أعد المحاولة في مكان مكشوف، أو ابحث عن قريتك بالاسم.
+              <Button variant="outline" size="sm" className="mt-2 flex" onClick={runGps}>
+                <RotateCcw /> أعد المحاولة
+              </Button>
+            </Alert>
+          ) : null}
+          {!isInLevant(draft) ? (
+            <Alert tone="warning">هذا الموقع خارج بلاد الشام. مواعيد الزراعة في التطبيق مصممة لفلسطين والمنطقة، فقد لا تناسبه.</Alert>
+          ) : detectedCountry == null ? (
+            <Alert tone="info" title="لم نتأكد من البلد">
+              هذا الموقع قريب من الحدود أو لم تحدد الخرائط بلده. لن نعرض مواعيد خاصة ببلد معيّن إلا إذا اخترته:
+              <span className="mt-2 flex flex-wrap gap-2">
+                {COUNTRIES.map((c) => (
+                  <Button key={c.code} size="sm" variant="outline" onClick={() => setManualCountry(c.code)}>
+                    {c.name}
+                  </Button>
+                ))}
+              </span>
+            </Alert>
+          ) : null}
         </section>
+      ) : null}
+
+      {step === "fix-name" && draft ? (
+        <section key="fix" aria-labelledby="loc-fix" className="loc-step flex flex-col gap-4 rounded-3xl border border-border bg-surface p-5 sm:p-7">
+          <h2 id="loc-fix" className="text-2xl font-extrabold">ما المشكلة؟</h2>
+          <form
+            className="flex flex-col gap-3 rounded-2xl border border-border p-4"
+            onSubmit={(e) => {
+              e.preventDefault();
+              if (typedName.trim().length >= 2) void save(typedName.trim(), "manual");
+            }}
+          >
+            <p className="font-bold">المكان صحيح، لكن الاسم غير صحيح</p>
+            <p className="text-sm text-muted-foreground">نحفظ نفس المكان الذي حدده جهازك، مع الاسم الذي تكتبه.</p>
+            <Input aria-label="الاسم الصحيح لقريتك" placeholder="اكتب الاسم الصحيح" value={typedName} onChange={(e) => setTypedName(e.target.value)} className="h-14 text-lg" />
+            <Button type="submit" size="lg" className={BIG} disabled={saving || !zone || typedName.trim().length < 2}>
+              {saving ? <Spinner /> : <PencilLine />} احفظ بهذا الاسم
+            </Button>
+          </form>
+          <div className="flex flex-col gap-3 rounded-2xl border border-border p-4">
+            <p className="font-bold">أرضي في قرية أخرى</p>
+            <p className="text-sm text-muted-foreground">ابحث عنها بالاسم، وسنحفظ مكان تلك القرية بدل مكانك الحالي.</p>
+            <Button variant="outline" size="lg" className={BIG} onClick={() => setStep("search")}>
+              <Search /> ابحث عن قريتك
+            </Button>
+          </div>
+          <Button variant="ghost" className="self-start" onClick={() => setStep("confirm")}>رجوع</Button>
+        </section>
+      ) : null}
+
+      {step === "search" ? (
+        <section key="search" aria-labelledby="loc-search" className="loc-step flex flex-col gap-4 rounded-3xl border border-border bg-surface p-5 sm:p-7">
+          <h2 id="loc-search" className="text-2xl font-extrabold">ابحث عن قريتك</h2>
+          <form onSubmit={runSearch} role="search" className="flex flex-col gap-3 sm:flex-row">
+            <Input
+              aria-label="اسم القرية أو البلدة"
+              placeholder="مثال: بيت أمر، سعير، سبسطية"
+              value={query}
+              onChange={(e) => setQuery(e.target.value)}
+              className="h-14 text-lg"
+            />
+            <Button type="submit" size="lg" className={cn(BIG, "sm:w-40")} disabled={search.status === "loading" || query.trim().length < 2}>
+              {search.status === "loading" ? <Spinner /> : <Search />} بحث
+            </Button>
+          </form>
+          <p className="text-xs text-subtle-foreground">نرسل نص البحث فقط إلى OpenStreetMap عند الضغط على «بحث».</p>
+          {search.status === "error" ? (
+            <Alert tone="warning" title="تعذّر البحث الآن">
+              قد لا يوجد اتصال بالإنترنت. حاول بعد قليل، أو اختر أقرب مدينة من «خيارات متقدمة» (تعمل دون إنترنت).
+            </Alert>
+          ) : null}
+          {search.status === "done" && search.results.length === 0 ? (
+            <p className="text-base text-muted-foreground">لم نجد هذا الاسم. جرّب كتابته بطريقة أخرى، أو أضف اسم المحافظة.</p>
+          ) : null}
+          {search.results.length ? (
+            <>
+              {search.results.length > 1 ? <p className="text-sm font-bold">اختر قريتك (انتبه للمحافظة إن تكرر الاسم):</p> : null}
+              <ul className="flex flex-col gap-2">
+                {search.results.map((r) => (
+                  <li key={`${r.latitude},${r.longitude},${r.displayName}`}>
+                    <button
+                      type="button"
+                      onClick={() => pickSearchResult(r)}
+                      className="flex min-h-14 w-full items-center gap-3 rounded-2xl border border-border p-3 text-start transition-colors hover:bg-surface-muted active:scale-[0.99]"
+                    >
+                      <MapPinned className="size-6 shrink-0 text-brand-600" aria-hidden />
+                      <span className="min-w-0">
+                        <span className="block text-lg font-bold">{r.label}</span>
+                        <span className="block truncate text-xs text-muted-foreground">{r.displayName}</span>
+                      </span>
+                    </button>
+                  </li>
+                ))}
+              </ul>
+              <p className="text-xs text-subtle-foreground">بيانات الأماكن © مساهمو OpenStreetMap</p>
+            </>
+          ) : null}
+          <Button variant="ghost" className="self-start" onClick={() => setStep(draft ? "confirm" : location ? "saved" : "start")}>رجوع</Button>
+        </section>
+      ) : null}
+
+      {step !== "saved" && step !== "locating" && step !== "naming" ? (
+        <AdvancedOptions
+          draft={draft}
+          accuracyM={draft?.source === "gps" ? draft.accuracyM : null}
+          elevationM={elevationM}
+          nearestName={nearest?.name ?? null}
+          zone={zone}
+          suggestion={suggestion}
+          onZone={(z) => setManualZone(z === suggestion?.zone ? null : z)}
+          country={countryCode}
+          detectedCountry={detectedCountry}
+          onCountry={setManualCountry}
+          consent={consent}
+          onConsent={setConsent}
+          onPickTown={pickTown}
+          onPickMap={pickOnMap}
+          onUseMapPoint={() => (draft ? (consent ? lookupName(draft) : setStep("consent")) : undefined)}
+          hasSaved={Boolean(location)}
+          onDelete={removeSaved}
+          storageHint={mode === "remote" ? "يُحفظ موقعك في حسابك." : "يُحفظ موقعك في هذا المتصفح فقط."}
+        />
       ) : null}
     </div>
   );

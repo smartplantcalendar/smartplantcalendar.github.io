@@ -71,12 +71,14 @@ export function readLocation(): SavedLocation | null {
   }
 }
 
-export function writeLocation(loc: SavedLocation | null) {
+/** Returns false when the browser refused to store it (private mode, full storage…). */
+export function writeLocation(loc: SavedLocation | null): boolean {
   try {
     if (loc) window.localStorage.setItem(LOCATION_KEY, JSON.stringify(loc));
     else window.localStorage.removeItem(LOCATION_KEY);
+    return true;
   } catch {
-    /* ignore */
+    return false;
   }
 }
 
