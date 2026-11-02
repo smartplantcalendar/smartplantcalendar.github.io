@@ -3,8 +3,9 @@
  * script (scripts/crop-photos.ts) and by the UI.
  *
  * Photos are keyed by the crop's stable slug (never its Arabic name), come
- * only from Wikimedia Commons under a licence that allows re-hosting with
- * attribution, and always carry their author, licence and source link.
+ * only from Wikimedia Commons or iNaturalist's open data under a licence that
+ * allows re-hosting with attribution (CC0, CC BY, CC BY-SA — never NC/ND),
+ * and always carry their author, licence and source link.
  */
 import type { Crop, CropCategory } from "./types";
 
@@ -13,16 +14,16 @@ export const PHOTO_SUBJECTS = ["fruit", "fruit_on_tree", "flower", "ear", "plant
 export type PhotoSubject = (typeof PHOTO_SUBJECTS)[number];
 
 export interface CropPhotoCredit {
-  /** Commons file title, e.g. "File:Aubergine.jpg". */
+  /** Commons file title ("File:Aubergine.jpg") or iNaturalist photo id ("inaturalist-photo-123"). */
   title: string;
-  /** Commons file page. */
+  /** The photo's page at its source (shows the exact licence). */
   pageUrl: string;
   /** Author as shown on Commons (plain text). */
   author: string;
   /** Licence short name, e.g. "CC BY-SA 4.0", "CC0", "Public domain". */
   license: string;
   licenseUrl: string | null;
-  source: "Wikimedia Commons";
+  source: "Wikimedia Commons" | "iNaturalist";
 }
 
 export interface CropPhoto {
@@ -44,8 +45,9 @@ export interface CropPhoto {
 export function isAllowedLicense(shortName: string): boolean {
   const s = shortName.trim();
   if (/^(CC0|CC0 1\.0|Public domain|PD|No restrictions)$/i.test(s)) return true;
-  // CC BY / CC BY-SA, any version 1.0–4.0, optionally ported ("CC BY-SA 3.0 de").
-  return /^CC BY(-SA)? [1-4]\.0( [a-z]{2,3})?$/i.test(s);
+  // CC BY / CC BY-SA, any version 1.0–4.0, optionally ported ("CC BY-SA 3.0 de"),
+  // or without a version as iNaturalist's open data records them ("CC BY").
+  return /^CC BY(-SA)?( [1-4]\.0( [a-z]{2,3})?)?$/i.test(s);
 }
 
 /** True for licences that need no attribution (we still credit the author when known). */
@@ -122,8 +124,16 @@ export function defaultSubject(category: CropCategory): PhotoSubject {
   }
 }
 
+export const SOURCE_NAMES: Record<CropPhotoCredit["source"], string> = {
+  "Wikimedia Commons": "ويكيميديا كومنز",
+  iNaturalist: "آي ناتشراليست",
+};
+
+/** Licence codes of iNaturalist's open data → display names (NC/ND are never accepted). */
+export const INAT_LICENSES: Record<string, string> = { CC0: "CC0", "CC-BY": "CC BY", "CC-BY-SA": "CC BY-SA" };
+
 /** Short Arabic credit line, e.g. «الصورة: فلان، CC BY-SA 4.0، ويكيميديا كومنز». */
 export function creditLine(credit: CropPhotoCredit): string {
   const author = credit.author || "مؤلف غير مذكور";
-  return `الصورة: ${author}، ${credit.license}، ويكيميديا كومنز`;
+  return `الصورة: ${author}، ${credit.license}، ${SOURCE_NAMES[credit.source]}`;
 }

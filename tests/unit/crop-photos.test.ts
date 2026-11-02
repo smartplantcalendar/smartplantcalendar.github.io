@@ -1,7 +1,7 @@
 import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
-import { judgeCommonsFile, outputName, searchQuery, type CommonsPage } from "../../scripts/crop-photos/core";
+import { judgeCommonsFile, judgeInatPhoto, outputName, searchQuery, type CommonsPage } from "../../scripts/crop-photos/core";
 import { SEED_CROPS } from "@/data/crops";
 import { CROP_PHOTOS } from "@/data/crop-photos";
 import { creditLine, defaultSubject, isAllowedLicense, photoAlt, plainText, PHOTO_SUBJECTS } from "@/domain/crop-photos";
@@ -49,6 +49,21 @@ describe("judging a Commons file", () => {
   });
 });
 
+describe("judging an iNaturalist open-data photo", () => {
+  const base = { photoId: 123, extension: "jpg", license: "CC-BY", author: "Jane Doe", observationUuid: "u", width: 2048, height: 1536 };
+  it("accepts CC0, CC BY and CC BY-SA with an author, and links the photo page", () => {
+    const v = judgeInatPhoto(base);
+    expect(v).toMatchObject({ ok: true, downloadUrl: "https://inaturalist-open-data.s3.amazonaws.com/photos/123/large.jpg", credit: { license: "CC BY", source: "iNaturalist", pageUrl: "https://www.inaturalist.org/photos/123", author: "Jane Doe" } });
+    expect(judgeInatPhoto({ ...base, license: "CC-BY-SA" }).ok).toBe(true);
+    expect(judgeInatPhoto({ ...base, license: "CC0", author: "" }).ok).toBe(true);
+  });
+  it("rejects non-commercial or no-derivatives licences, missing authors and small photos", () => {
+    for (const license of ["CC-BY-NC", "CC-BY-NC-SA", "CC-BY-ND", "CC-BY-NC-ND", ""]) expect(judgeInatPhoto({ ...base, license }).ok, license).toBe(false);
+    expect(judgeInatPhoto({ ...base, author: " " }).ok).toBe(false);
+    expect(judgeInatPhoto({ ...base, width: 600, height: 450 }).ok).toBe(false);
+  });
+});
+
 describe("search and naming", () => {
   it("searches by scientific name, never the Arabic name", () => {
     expect(searchQuery("Ficus carica", "fruit_on_tree")).toBe('"Ficus carica" fruit tree filetype:bitmap');
@@ -68,12 +83,13 @@ describe("search and naming", () => {
 });
 
 describe("the photo manifest", () => {
-  const selection = JSON.parse(readFileSync(join(process.cwd(), "data/crop-photos/selection.json"), "utf8")) as Record<string, { file: string; subject?: string }>;
+  const selection = JSON.parse(readFileSync(join(process.cwd(), "data/crop-photos/selection.json"), "utf8")) as Record<string, { file?: string; inaturalist?: { photoId: number }; subject?: string }>;
 
   it("selection.json names real crops by slug, Commons bitmaps and known subjects", () => {
     for (const [slug, s] of Object.entries(selection)) {
       expect(SEED_CROPS.some((c) => c.slug === slug), slug).toBe(true);
-      expect(s.file).toMatch(/^File:.+\.(jpe?g|png|webp)$/i);
+      expect(Boolean(s.file) !== Boolean(s.inaturalist), slug).toBe(true);
+      if (s.file) expect(s.file).toMatch(/^File:.+\.(jpe?g|png|webp)$/i);
       if (s.subject) expect(PHOTO_SUBJECTS).toContain(s.subject);
     }
   });
@@ -81,9 +97,11 @@ describe("the photo manifest", () => {
   it("every photo is keyed by a crop slug, licensed, credited, sized and present on disk", () => {
     for (const [slug, p] of Object.entries(CROP_PHOTOS)) {
       expect(SEED_CROPS.some((c) => c.slug === slug), slug).toBe(true);
-      expect(selection[slug]?.file, slug).toBe(p.credit.title);
+      const sel = selection[slug];
+      expect(sel?.file ?? `inaturalist-photo-${sel?.inaturalist?.photoId}`, slug).toBe(p.credit.title);
       expect(isAllowedLicense(p.credit.license), slug).toBe(true);
-      expect(p.credit.pageUrl).toMatch(/^https:\/\/commons\.wikimedia\.org\//);
+      expect(p.credit.pageUrl).toMatch(/^https:\/\/(commons\.wikimedia\.org|www\.inaturalist\.org)\//);
+      if (p.credit.license !== "CC0" && p.credit.license !== "Public domain") expect(p.credit.author, slug).not.toBe("");
       expect(p.alt).toMatch(/^صورة حقيقية: /);
       expect(p.alt).not.toMatch(/[A-Za-z]/);
       expect(p.width).toBeGreaterThan(0);

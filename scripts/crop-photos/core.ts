@@ -4,7 +4,7 @@
  * photo may be used: bitmap, large enough, and under an allowed licence with
  * a named author.
  */
-import { isAllowedLicense, isPublicDomain, plainText, type CropPhotoCredit, type PhotoSubject } from "../../src/domain/crop-photos";
+import { INAT_LICENSES, isAllowedLicense, isPublicDomain, plainText, type CropPhotoCredit, type PhotoSubject } from "../../src/domain/crop-photos";
 
 export const COMMONS_API = "https://commons.wikimedia.org/w/api.php";
 /** Descriptive client id required by Wikimedia's API etiquette (no personal data). */
@@ -93,6 +93,47 @@ export function imageInfoParams(extra: Record<string, string>): URLSearchParams 
     iiextmetadatafilter: "LicenseShortName|LicenseUrl|Artist|Restrictions",
     ...extra,
   });
+}
+
+/** iNaturalist open data (https://github.com/inaturalist/inaturalist-open-data): one photo row. */
+export interface InatPhoto {
+  photoId: number;
+  extension: string;
+  /** Licence code as in photos.csv: CC0, CC-BY, CC-BY-SA (NC/ND rejected). */
+  license: string;
+  /** Observer's name (or login when no name), from observers.csv. */
+  author: string;
+  observationUuid: string;
+  width: number;
+  height: number;
+}
+
+export const INAT_BUCKET = "https://inaturalist-open-data.s3.amazonaws.com";
+
+/** Decides whether an iNaturalist open-data photo can be re-hosted, and builds its credit. */
+export function judgeInatPhoto(p: InatPhoto): Verdict {
+  const license = INAT_LICENSES[p.license];
+  if (!license) return { ok: false, reason: `ترخيص غير مسموح: «${p.license}»` };
+  if (!/^(jpe?g|png)$/i.test(p.extension)) return { ok: false, reason: `نوع ملف غير مناسب (${p.extension})` };
+  if (Math.max(p.width, p.height) < MIN_WIDTH) return { ok: false, reason: `الصورة صغيرة (${p.width}×${p.height})` };
+  const author = p.author.trim();
+  if (!author && !isPublicDomain(license)) return { ok: false, reason: "الترخيص يشترط النسب لكن المصوّر غير مذكور" };
+  return {
+    ok: true,
+    width: p.width,
+    height: p.height,
+    // "large" is at most 1024 px on the long side: enough for our 960 px file.
+    downloadUrl: `${INAT_BUCKET}/photos/${p.photoId}/large.${p.extension.toLowerCase()}`,
+    credit: {
+      title: `inaturalist-photo-${p.photoId}`,
+      pageUrl: `https://www.inaturalist.org/photos/${p.photoId}`,
+      author: author.slice(0, 160),
+      license,
+      // The photo page shows the exact licence version.
+      licenseUrl: null,
+      source: "iNaturalist",
+    },
+  };
 }
 
 /** Output file names: stable slug + width, e.g. "fig-640.webp". */

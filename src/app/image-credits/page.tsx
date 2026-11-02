@@ -3,6 +3,7 @@ import { ExternalLink } from "lucide-react";
 import Link from "next/link";
 import { CropImage } from "@/components/brand/crop-image";
 import { CROP_PHOTOS } from "@/data/crop-photos";
+import { SOURCE_NAMES } from "@/domain/crop-photos";
 import { absoluteUrl } from "@/lib/env";
 import { getCrops } from "@/services/crops";
 
@@ -25,7 +26,7 @@ export default async function ImageCreditsPage() {
       <header className="max-w-3xl space-y-3">
         <h1 className="text-3xl font-extrabold sm:text-4xl">مصادر الصور</h1>
         <p className="leading-8 text-muted-foreground">
-          صور المحاصيل الحقيقية مأخوذة من ويكيميديا كومنز بتراخيص تسمح بإعادة نشرها مع ذكر المصوّر. صغّرنا الصور وحوّلناها إلى صيغة خفيفة تناسب الهواتف، ولم نغيّر محتواها. المحاصيل التي لم نجد لها صورة موثوقة بترخيص مناسب تظهر برسم توضيحي.
+          صور المحاصيل الحقيقية مأخوذة من البيانات المفتوحة لموقع آي ناتشراليست أو من ويكيميديا كومنز، بتراخيص تسمح بإعادة نشرها مع ذكر المصوّر (CC0 أو CC BY أو CC BY-SA)، ولا نستعمل صورًا بتراخيص غير تجارية. صغّرنا الصور وحوّلناها إلى صيغة خفيفة تناسب الهواتف، ولم نغيّر محتواها. المحاصيل التي لم نجد لها صورة موثوقة بترخيص مناسب تظهر برسم توضيحي.
         </p>
         <p className="text-sm text-muted-foreground" data-testid="credits-count">
           {withPhoto.length ? `${withPhoto.length} محصولًا بصورة حقيقية، و${withArt.length} برسم توضيحي.` : `لا توجد صور حقيقية بعد؛ كل المحاصيل (${withArt.length}) تظهر برسم توضيحي.`}
@@ -58,7 +59,7 @@ export default async function ImageCreditsPage() {
                       )}
                     </span>
                     <a href={credit.pageUrl} target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-1 font-semibold text-brand-700 underline underline-offset-4">
-                      <ExternalLink className="size-3.5" aria-hidden /> صفحة الصورة في ويكيميديا كومنز
+                      <ExternalLink className="size-3.5" aria-hidden /> صفحة الصورة في {SOURCE_NAMES[credit.source]}
                     </a>
                   </div>
                 </li>

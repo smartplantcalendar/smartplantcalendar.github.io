@@ -14,6 +14,8 @@
  *     regenerates src/data/crop-photos.ts and data/crop-photos/REPORT.md.
  *
  * selection.json: { "<slug>": { "file": "File:….jpg", "subject"?: "fruit_on_tree" } }
+ *   or, for iNaturalist open data (scripts/crop-photos/inat-candidates.sh):
+ *   { "<slug>": { "inaturalist": { photoId, extension, license, author, observationUuid, width, height } } }
  * Crops without a selection keep their drawing — never a doubtful photo.
  */
 import { execFile } from "node:child_process";
@@ -22,7 +24,7 @@ import { join } from "node:path";
 import { promisify } from "node:util";
 import { SEED_CROPS } from "../src/data/crops";
 import { defaultSubject, photoAlt, PHOTO_SUBJECTS, type CropPhoto, type PhotoSubject } from "../src/domain/crop-photos";
-import { COMMONS_API, OUTPUT_WIDTHS, USER_AGENT, imageInfoParams, judgeCommonsFile, outputName, searchQuery, type CommonsPage } from "./crop-photos/core";
+import { COMMONS_API, OUTPUT_WIDTHS, USER_AGENT, imageInfoParams, judgeCommonsFile, judgeInatPhoto, outputName, searchQuery, type CommonsPage, type InatPhoto, type Verdict } from "./crop-photos/core";
 
 const run = promisify(execFile);
 const root = process.cwd();
@@ -47,8 +49,10 @@ async function api(params: URLSearchParams): Promise<CommonsPage[]> {
   return (body.query?.pages ?? []) as CommonsPage[];
 }
 
+/** A Commons file title, or an iNaturalist open-data photo (recorded with its licence and author). */
 interface Selection {
-  file: string;
+  file?: string;
+  inaturalist?: InatPhoto;
   subject?: PhotoSubject;
 }
 
@@ -56,7 +60,8 @@ function readSelection(): Record<string, Selection> {
   const raw = JSON.parse(readFileSync(SELECTION, "utf8")) as Record<string, Selection>;
   for (const [slug, s] of Object.entries(raw)) {
     if (!SEED_CROPS.some((c) => c.slug === slug)) throw new Error(`selection.json: unknown crop ${slug}`);
-    if (!/^File:.+\.(jpe?g|png|webp)$/i.test(s.file)) throw new Error(`selection.json: ${slug}: not a Commons bitmap file title`);
+    if (Boolean(s.file) === Boolean(s.inaturalist)) throw new Error(`selection.json: ${slug}: give either "file" (Commons) or "inaturalist"`);
+    if (s.file && !/^File:.+\.(jpe?g|png|webp)$/i.test(s.file)) throw new Error(`selection.json: ${slug}: not a Commons bitmap file title`);
     if (s.subject && !PHOTO_SUBJECTS.includes(s.subject)) throw new Error(`selection.json: ${slug}: unknown subject ${s.subject}`);
   }
   return raw;
@@ -103,10 +108,14 @@ async function fetchSelected() {
   for (const crop of SEED_CROPS) {
     const sel = selection[crop.slug];
     if (!sel) continue;
-    const [page] = await api(imageInfoParams({ titles: sel.file, iiurlwidth: "1280" }));
-    const v = judgeCommonsFile(page ?? { title: sel.file, missing: true });
+    let v: Verdict;
+    if (sel.inaturalist) v = judgeInatPhoto(sel.inaturalist);
+    else {
+      const [page] = await api(imageInfoParams({ titles: sel.file!, iiurlwidth: "1280" }));
+      v = judgeCommonsFile(page ?? { title: sel.file!, missing: true });
+    }
     if (!v.ok) {
-      problems.push(`${crop.slug} (${sel.file}): ${v.reason}`);
+      problems.push(`${crop.slug} (${sel.file ?? `iNaturalist ${sel.inaturalist?.photoId}`}): ${v.reason}`);
       continue;
     }
     const original = await get(v.downloadUrl);
@@ -170,7 +179,7 @@ function writeReport(photos: Record<string, CropPhoto>, problems: string[]) {
     ...withPhoto.map((c) => {
       const p = photos[c.slug];
       const license = p.credit.licenseUrl ? `[${p.credit.license}](${p.credit.licenseUrl})` : p.credit.license;
-      return `| ${c.name} (\`${c.slug}\`) | ${c.scientificName ?? "—"} | ${p.alt} | ${esc(p.credit.author || "—")} | ${license} | [${esc(p.credit.title)}](${p.credit.pageUrl}) |`;
+      return `| ${c.name} (\`${c.slug}\`) | ${c.scientificName ?? "—"} | ${p.alt} | ${esc(p.credit.author || "—")} | ${license} | [${p.credit.source}: ${esc(p.credit.title)}](${p.credit.pageUrl}) |`;
     }),
     "",
     "## محاصيل بقيت بالرسم التوضيحي",
