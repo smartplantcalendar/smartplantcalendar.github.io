@@ -300,6 +300,20 @@
   }
 }
 
+/*
+ * Crop photos: visible by default; after hydration a photo still loading is
+ * hidden (data-pending) and fades in once decoded. No motion when reduced.
+ */
+@media (prefers-reduced-motion: no-preference) {
+  .crop-photo {
+    transition: opacity 0.35s ease-out;
+  }
+
+  .crop-photo[data-pending] {
+    opacity: 0;
+  }
+}
+
 /* Location flow: each step rises in once; the locating pin pulses gently. */
 @media (prefers-reduced-motion: no-preference) {
   .loc-step {

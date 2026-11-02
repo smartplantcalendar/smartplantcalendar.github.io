@@ -4,6 +4,8 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { CropImage } from "@/components/brand/crop-image";
+import { CROP_PHOTOS } from "@/data/crop-photos";
+import { creditLine } from "@/domain/crop-photos";
 import { PlantingStatus } from "@/components/crops/planting-status";
 import { findSource, sourcesForCrop } from "@/data/crop-sources";
 import { otherMeanings } from "@/domain/ambiguous-names";
@@ -69,6 +71,7 @@ export default async function CropDetailPage({ params }: { params: Promise<{ slu
   if (!crop) notFound();
 
   const plannable = isPlannable(crop);
+  const photo = crop.imageUrl ? null : CROP_PHOTOS[crop.slug];
   const usedSources = [...new Set(crop.windows.map((w) => w.sourceId).filter((id): id is string => Boolean(id)))]
     .map((id) => findSource(id))
     .filter((src) => src !== undefined);
@@ -188,7 +191,17 @@ export default async function CropDetailPage({ params }: { params: Promise<{ slu
             <p className="text-sm text-muted-foreground">لا يمكن إنشاء خطة لهذا المحصول بعد، لأن مواعيد زراعته غير موثّقة.</p>
           )}
         </div>
-        <CropImage crop={crop} priority sizes="(max-width: 1024px) 100vw, 45vw" className="aspect-[4/3] rounded-2xl border border-border shadow-md" />
+        <figure className="flex flex-col gap-2">
+          <CropImage crop={crop} priority sizes="(max-width: 1024px) 100vw, 45vw" className="aspect-[4/3] rounded-2xl border border-border shadow-md" />
+          {photo ? (
+            <figcaption className="text-xs leading-6 text-muted-foreground" data-testid="photo-credit">
+              {creditLine(photo.credit)} ·{" "}
+              <Link href={`/image-credits#${crop.slug}`} className="font-semibold text-brand-700 underline underline-offset-4">
+                مصادر الصور
+              </Link>
+            </figcaption>
+          ) : null}
+        </figure>
       </header>
 
       <section aria-label="معلومات سريعة" className="mt-10 grid gap-4 sm:grid-cols-2 lg:grid-cols-4">

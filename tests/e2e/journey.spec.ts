@@ -70,6 +70,8 @@ test("guest can plan a crop and manage tasks in the calendar", async ({ page, is
   const dayPanel = page.locator("section[aria-labelledby='day-title']");
   await expect(dayPanel.getByText("شتل أشتال البندورة")).toBeVisible();
   await expectNoStrayEnglish(page);
+  // Calendar rows show the crop's picture (photo or drawing), sized in advance.
+  await expect(dayPanel.locator("[data-photo]").first()).toBeVisible();
 
   // Open the task, edit its title and date, then complete it.
   await dayPanel.getByRole("button", { name: /^شتل أشتال البندورة/ }).click();
@@ -130,6 +132,21 @@ test("an estimated crop reaches the planner and the calendar, labelled as an est
   const dayPanel = page.locator("section[aria-labelledby='day-title']");
   await expect(dayPanel.getByText("بداية القطف التقديرية لـالباذنجان")).toBeVisible();
   await expectNoStrayEnglish(page);
+});
+
+test("photo credits are reachable and every crop keeps a picture", async ({ page }) => {
+  await go(page, "/");
+  await page.getByRole("contentinfo").getByRole("link", { name: "مصادر الصور" }).click();
+  await expect(page).toHaveURL(/\/image-credits\/?$/);
+  await expect(page.getByRole("heading", { level: 1 })).toHaveText("مصادر الصور");
+  await expect(page.getByTestId("credits-count")).toBeVisible();
+  await expectNoStrayEnglish(page);
+  // A crop without a licensed photo keeps its drawing and shows no photo credit.
+  await go(page, "/crops/tomato/");
+  const picture = page.locator("figure [data-photo]").first();
+  await expect(picture).toBeVisible();
+  if ((await picture.getAttribute("data-photo")) === "art") await expect(page.getByTestId("photo-credit")).toHaveCount(0);
+  else await expect(page.getByTestId("photo-credit")).toContainText("ويكيميديا كومنز");
 });
 
 test("weather failure shows an Arabic message and the page keeps working", async ({ page }) => {

@@ -26,6 +26,7 @@ const GROUPS = [
       { href: "/contact", label: "تواصل معنا" },
       { href: "/privacy", label: "سياسة الخصوصية" },
       { href: "/terms", label: "شروط الاستخدام" },
+      { href: "/image-credits", label: "مصادر الصور" },
     ],
   },
 ];
