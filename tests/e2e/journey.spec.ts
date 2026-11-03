@@ -19,7 +19,13 @@ async function chooseCityInPlanner(page: Page, cityId: string) {
 const ENGLISH_ALLOWED = /Open-Meteo|OpenStreetMap|Nominatim|Copernicus|GPS|Supabase|Solanum|Cucumis|Allium|Lactuca|Capsicum|Mentha|Origanum|Fragaria|Olea|Vitis|spp\.|ananassa|lycopersicum|sativus|tuberosum|cepa|sativum|annuum|syriacum|europaea|vinifera|melongena|×/g;
 
 async function expectNoStrayEnglish(page: Page) {
-  const text = await page.locator("body").innerText();
+  // Proper names marked translate="no" (photographers credited as their licences require) are not UI text.
+  const text = await page.evaluate(() => {
+    const body = document.body.cloneNode(true) as HTMLElement;
+    body.querySelectorAll('[translate="no"]').forEach((el) => el.remove());
+    body.querySelectorAll("script, style").forEach((el) => el.remove());
+    return body.textContent ?? "";
+  });
   const cleaned = text.replace(ENGLISH_ALLOWED, "");
   const words = cleaned.match(/[A-Za-z]{3,}/g) ?? [];
   expect(words, `English words found: ${words.join(", ")}`).toEqual([]);
@@ -70,6 +76,8 @@ test("guest can plan a crop and manage tasks in the calendar", async ({ page, is
   const dayPanel = page.locator("section[aria-labelledby='day-title']");
   await expect(dayPanel.getByText("شتل أشتال البندورة")).toBeVisible();
   await expectNoStrayEnglish(page);
+  // Calendar rows show the crop's picture (photo or drawing), sized in advance.
+  await expect(dayPanel.locator("[data-photo]").first()).toBeVisible();
 
   // Open the task, edit its title and date, then complete it.
   await dayPanel.getByRole("button", { name: /^شتل أشتال البندورة/ }).click();
@@ -130,6 +138,75 @@ test("an estimated crop reaches the planner and the calendar, labelled as an est
   const dayPanel = page.locator("section[aria-labelledby='day-title']");
   await expect(dayPanel.getByText("بداية القطف التقديرية لـالباذنجان")).toBeVisible();
   await expectNoStrayEnglish(page);
+});
+
+test("real crop photos load, are credited, lazy and sized", async ({ page, isMobile }) => {
+  await seedLocation(page, HEBRON);
+  // Crop page: the photo is decoded, has Arabic alt text, intrinsic size and a credit line.
+  await go(page, "/crops/fig/");
+  const photo = page.locator("figure img.crop-photo");
+  await expect(photo).toHaveAttribute("alt", "صورة حقيقية: ثمار التين على الشجرة");
+  await expect(photo).toHaveAttribute("width", /\d+/);
+  await expect(photo).toHaveAttribute("height", /\d+/);
+  await expect.poll(() => photo.evaluate((img: HTMLImageElement) => img.complete && img.naturalWidth > 0)).toBe(true);
+  await expect(page.getByTestId("photo-credit")).toContainText("آي ناتشراليست");
+  await expectNoStrayEnglish(page);
+
+  // Crop guide: every card photo is lazy and sized in advance, and cards never fetch the 960 px file.
+  const requested: string[] = [];
+  page.on("request", (r) => {
+    if (r.url().includes("/images/crops/")) requested.push(r.url());
+  });
+  await go(page, "/crops/");
+  const cards = page.locator("img.crop-photo");
+  await expect(cards.first()).toBeVisible();
+  for (const img of await cards.all()) {
+    expect(await img.getAttribute("loading")).toBe("lazy");
+    expect(Number(await img.getAttribute("width"))).toBeGreaterThan(0);
+  }
+  await page.waitForTimeout(500);
+  expect(requested.length).toBeGreaterThan(0);
+  expect(requested.filter((u) => u.endsWith("-960.webp")), "cards must use the smaller files").toEqual([]);
+  void isMobile;
+
+  // Search results and «ماذا أزرع الآن؟» show real photos too.
+  await go(page, "/");
+  await page.getByRole("combobox", { name: "ابحث عن محصول" }).fill("تين");
+  await expect(page.getByRole("option", { name: /^التين/ }).first().locator("img.crop-photo")).toBeVisible();
+  await go(page, "/recommendations/");
+  await expect(page.locator("[data-testid^='rec-'] img.crop-photo").first()).toBeVisible();
+});
+
+test("on a slow connection the page is usable before photos arrive, with no layout shift", async ({ page }) => {
+  // About 3G: every photo is delayed by 1.5 s.
+  await page.route("**/images/crops/**", async (route) => {
+    await new Promise((r) => setTimeout(r, 1500));
+    await route.continue();
+  });
+  await go(page, "/crops/olive/");
+  // Text is there first; the photo box already has its final size.
+  await expect(page.getByRole("heading", { level: 1 })).toHaveText("الزيتون");
+  const box = page.locator("figure [data-photo='real']");
+  const before = await box.boundingBox();
+  await expect.poll(() => page.locator("figure img.crop-photo").evaluate((img: HTMLImageElement) => img.naturalWidth > 0), { timeout: 15000 }).toBe(true);
+  const after = await box.boundingBox();
+  expect(after?.height).toBe(before?.height);
+  expect(after?.width).toBe(before?.width);
+});
+
+test("photo credits are reachable and every crop keeps a picture", async ({ page }) => {
+  await go(page, "/");
+  await page.getByRole("contentinfo").getByRole("link", { name: "مصادر الصور" }).click();
+  await expect(page).toHaveURL(/\/image-credits\/?$/);
+  await expect(page.getByRole("heading", { level: 1 })).toHaveText("مصادر الصور");
+  await expect(page.getByTestId("credits-count")).toBeVisible();
+  await expectNoStrayEnglish(page);
+  // A crop without a licensed photo keeps its drawing and shows no photo credit.
+  await go(page, "/crops/tomato/");
+  const picture = page.locator("figure [data-photo]").first();
+  await expect(picture).toBeVisible();
+  if ((await picture.getAttribute("data-photo")) === "art") await expect(page.getByTestId("photo-credit")).toHaveCount(0);
+  else await expect(page.getByTestId("photo-credit")).toContainText(/آي ناتشراليست|ويكيميديا كومنز/);
 });
 
 test("weather failure shows an Arabic message and the page keeps working", async ({ page }) => {

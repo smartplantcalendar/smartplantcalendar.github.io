@@ -7,6 +7,7 @@ import { daysUntil, isOverdue } from "@/domain/tasks";
 import type { Task } from "@/domain/types";
 import { formatDate, formatDays, relativeDay } from "@/lib/format";
 import { cn } from "@/lib/utils";
+import { CropImage } from "@/components/brand/crop-image";
 import { TaskTypeIcon } from "./task-type-badge";
 
 /** One task in a list: quick complete toggle + opens details on click. */
@@ -35,6 +36,9 @@ export function TaskRow({ task, onOpen, showDate = true }: { task: Task; onOpen:
         {done ? <Check className="size-4" /> : <Circle className="size-3" />}
       </button>
       <button type="button" onClick={() => onOpen(task)} className="flex min-w-0 flex-1 items-center gap-3 text-start">
+        {planting ? (
+          <CropImage crop={{ slug: planting.cropSlug, name: planting.cropName }} className="size-10 shrink-0 rounded-lg" sizes="40px" decorative />
+        ) : null}
         <TaskTypeIcon type={task.type} className="hidden sm:flex" />
         <span className="min-w-0 flex-1">
           <span className={cn("block truncate font-semibold", done && "text-muted-foreground line-through decoration-1")}>{task.title}</span>

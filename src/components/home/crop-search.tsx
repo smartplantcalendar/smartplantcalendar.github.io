@@ -194,7 +194,7 @@ export function CropSearch({ crops, ref }: { crops: SearchCrop[]; ref?: React.Re
                     i === active ? "bg-accent" : "hover:bg-surface-muted",
                   )}
                 >
-                  <CropImage crop={crop} className="size-14 shrink-0 rounded-xl" sizes="56px" />
+                  <CropImage crop={crop} className="size-14 shrink-0 rounded-xl" sizes="56px" decorative />
                   <div className="min-w-0 flex-1">
                     <p className="text-lg font-bold">
                       {crop.name}
